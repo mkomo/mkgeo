@@ -1,0 +1,26 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then
+  echo "USAGE: $0 <infile.geojson>"
+  exit 1
+fi
+
+INFILE=$1
+OUTFILE=$(echo $INFILE | sed "s/.geojson$/.projection.geojson/")
+SVGFILE=$(echo $INFILE | sed "s/.geojson$/.svg/")
+PNGFILE=$(echo $INFILE | sed "s/.geojson$/.png/")
+SIZE=8000
+
+echo "creating projection of size $SIZE in $OUTFILE"
+# see projections at https://github.com/d3/d3-geo-projection/blob/master/README.md
+geoproject "d3.geoCylindricalStereographic().fitSize([$SIZE, $SIZE], d)" < $INFILE > $OUTFILE
+
+echo "rendering svg file from $OUTFILE to $SVGFILE"
+geo2svg -w $SIZE -h $SIZE < $OUTFILE > $SVGFILE
+
+echo "rendering png file $PNGFILE"
+# had to change memory map and disk values to be 2,4,8GiB in:
+# /usr/local/etc/ImageMagick-7/../../Cellar/imagemagick/7.0.8-11_1/etc/ImageMagick-7/policy.xml
+convert $SVGFILE $PNGFILE
+
+#tile pngs
