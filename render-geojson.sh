@@ -13,7 +13,7 @@ SIZE=8000
 
 echo "creating projection of size $SIZE in $OUTFILE"
 # see projections at https://github.com/d3/d3-geo-projection/blob/master/README.md
-geoproject "d3.geoCylindricalStereographic().fitSize([$SIZE, $SIZE], d)" < $INFILE > $OUTFILE
+geoproject "d3.geoMercator().fitSize([$SIZE, $SIZE], d)" < $INFILE > $OUTFILE
 
 echo "rendering svg file from $OUTFILE to $SVGFILE"
 geo2svg -w $SIZE -h $SIZE < $OUTFILE > $SVGFILE

@@ -1,9 +1,12 @@
 #!/usr/bin/python
 
+from __future__ import print_function
+
 import bs4
 from bs4 import BeautifulSoup
 import requests
 import os.path
+import time
 
 import sys
 reload(sys)
@@ -16,10 +19,29 @@ STREET_LIST_FILE = './STREET_LIST.html'
 PROPERTY_LIST_PAGE_FORMAT = 'http://www.buffalo.oarsystem.com/assessment/pcllist.asp?swis=140200&address2={}&page={}'
 PROPERTY_LIST_FILE = './PROPERTY_LIST/{}.{}.html'
 
-#
 PROPERTY_DATA_PAGE_FORMAT = 'http://www.buffalo.oarsystem.com/assessment/{}'
 PROPERTY_DATA_STREET_DIR = './PROPERTY_DATA/{}'
 PROPERTY_DATA_FILE = PROPERTY_DATA_STREET_DIR + '/{}.html'
+
+ONLINE = False
+
+
+def fetch(url, local_path, name=None):
+    if not os.path.isfile(local_path):
+        debug('fetching url {}'.format(name if name else url), end=";\t")
+
+        millis = int(round(time.time() * 1000))
+        if ONLINE:
+            html = requests.get(url).text
+            out = open(local_path, 'w')
+            out.write(html)
+            out.close()
+            debug(int(round(time.time() * 1000)) - millis)
+        else:
+            raise Exception('do not make requests')
+
+    return open(local_path).read()
+
 
 def street_dir(street):
     return street.name.replace(' ', '_')
@@ -36,12 +58,21 @@ def cache_file_page(page):
     return PROPERTY_LIST_FILE.format(street_dir(page.street), page.number)
 
 
-def debug(str):
-    print str
+def debug(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
 
 
-def output(obj):
-    pass #print obj
+def output(property):
+    property.extended()
+    use = 'no use' if not hasattr(property, 'use') else property.use
+    print('{}\t{}'.format(use,''))#property.address))
+
+def extend(property):
+    if not property.check():
+        property.extended()
+
+def check(property):
+    property.check()
 
 class Breadcrumb:
     def __init__(self, street=None, page=None, property=None):
@@ -65,22 +96,10 @@ class Page:
         self.street = street
         self.number = number
 
-    def fetch(self):
-        cf = cache_file_page(self)
-        if not os.path.isfile(cf):
-            url = PROPERTY_LIST_PAGE_FORMAT.format(self.street.name, self.number)
-            debug('requesting page ' + url)
-            html = requests.get(url).text
-            out = open(cf, 'w')
-            out.write(html)
-            out.close()
-
-        return open(cf).read()
-
     def properties(self):
         if not hasattr(self, 'props'):
             self.props = []
-            html = self.fetch()
+            html = fetch(PROPERTY_LIST_PAGE_FORMAT.format(self.street.name, self.number), cache_file_page(self), '{}.{}'.format(self.street.name, self.number))
             soup = BeautifulSoup(html, "html.parser")
             for row in soup.find('table',{'class':'grid'}).findAll('tr')[1:]:
                 prop = Property(self.street)
@@ -99,7 +118,7 @@ class Page:
         return self.props
 
     def has_next(self):
-        html = self.fetch()
+        html = fetch(PROPERTY_LIST_PAGE_FORMAT.format(self.street.name, self.number), cache_file_page(self))
         soup = BeautifulSoup(html, "html.parser")
         next_elt = len(soup.findAll('table')[0].findAll('td')[3].findAll('a')) > 0
         return next_elt
@@ -111,43 +130,22 @@ class Property:
     def __init__(self, street=''):
         self.street = street
 
-    def fetch(self):
-        cf = cache_file(self)
-        if not os.path.isfile(cf):
-            url = PROPERTY_DATA_PAGE_FORMAT.format(self.url)
-            debug('fetching property {}'.format(self.address))
-            html = requests.get(url).text
-            out = open(cf, 'w')
-            out.write(html)
-            out.close()
-
-        return open(cf).read()
-
     def __repr__(self):
         return '{}'.format(self.__dict__)
 
     def extended(self):
         if not hasattr(self, 'is_extended'):
             self.is_extended = True
-            html = self.fetch()
+            html = fetch(PROPERTY_DATA_PAGE_FORMAT.format(self.url), cache_file(self), self.address)
             soup = BeautifulSoup(html, "html.parser")
-            if self.type == 'Residential':
-                self.use = soup.findAll('table')[8].findAll('td')[4].get_text().strip()
-
+            self.use = soup.find(text='Property Description').parent.parent.parent.findAll('tr')[2].findAll('td')[1].get_text().strip()
         return self
 
+    def check(self):
+        return os.path.isfile(cache_file(self))
 
-def get_street_list(use_local=True):
-    if use_local and os.path.isfile(STREET_LIST_FILE):
-        debug('opening local street list file')
-    else:
-        debug('fetching street list')
-        r  = requests.get(STREET_LIST_PAGE)
-        file = open(STREET_LIST_FILE, 'w')
-        file.write(r.text)
-        file.close()
-
-    data = open(STREET_LIST_FILE).read()
+def get_street_list():
+    data  = fetch(STREET_LIST_PAGE, STREET_LIST_FILE)
 
     debug('parsing street list')
     soup = BeautifulSoup(data, "html.parser")
@@ -159,27 +157,30 @@ def get_street_list(use_local=True):
 
     return streets#[326:328]
 
-last = Breadcrumb()
+def crawl(func, iterator=1):
+    last = Breadcrumb()
+    property_count = 0
+    for i,street in enumerate(get_street_list()[::iterator]):
+        debug('starting work on street #{}: {}'.format((i+1), street.name))
+        if last.is_before(Breadcrumb(street)):
+            street_property_count = 0
+            page = street.page
+            while page is not None:
+                debug('    starting work on page {} of {} (cumulative count: {})' .format(page.number, street.name, (property_count + street_property_count)))
+                street_property_count += len(page.properties())
+                for property in page.properties():
+                    func.__call__(property)
+                if page.has_next():
+                    page = page.get_next()
+                else:
+                    page = None
+            property_count += street_property_count
+            debug('  loaded {} properties on {} (cumulative {})'.format(street_property_count, street.name, property_count))
 
-property_count = 0
-for i,street in enumerate(get_street_list()):
-    debug('starting work on street #{}: {}'.format((i+1), street.name))
-    if last.is_before(Breadcrumb(street)):
-        street_property_count = 0
-        page = street.page
-        while page is not None:
-            debug('    starting work on page {} of {} (cumulative count: {})' .format(page.number, street.name, (property_count + street_property_count)))
-            street_property_count += len(page.properties())
-            for property in page.properties():
-                output(property.extended())
-            if page.has_next():
-                page = page.get_next()
-            else:
-                page = None
-        property_count += street_property_count
-        debug('  loaded {} properties on {} (cumulative {})'.format(street_property_count, street.name, property_count))
-
-# for streets in http://www.buffalo.oarsystem.com/assessment/main.asp?swis=140200&dbg=&opt=&swis=&sbl=&parcel9=&debug=&amp;wmode=transparent
-## for page in curl 'http://www.buffalo.oarsystem.com/assessment/pcllist.asp?swis=140200' --data 'debug=bdebug&streetlookup=yes&address2=GREENWOOD' --compressed
-### for property in page http://www.buffalo.oarsystem.com/assessment/r1parc.asp?swis=140200&sbl=0888300005037000
-#### scrape alllllll the data
+if __name__ == "__main__":
+    action = sys.argv[1]
+    if action == 'fetch':
+        ONLINE = True
+        crawl(extend, 1)
+    else:
+        crawl(output,1)
