@@ -7,6 +7,8 @@ from bs4 import BeautifulSoup
 import requests
 import os.path
 import time
+import json
+import urllib
 
 import sys
 reload(sys)
@@ -15,7 +17,6 @@ sys.setdefaultencoding('utf8')
 STREET_LIST_PAGE = 'http://www.buffalo.oarsystem.com/assessment/main.asp?swis=140200'
 STREET_LIST_FILE = './STREET_LIST.html'
 
-#http://www.buffalo.oarsystem.com/assessment/pcllist.asp?swis=140200&sbl=&address1=&address2=DELAVAN%20WEST&owner_name=&page=2
 PROPERTY_LIST_PAGE_FORMAT = 'http://www.buffalo.oarsystem.com/assessment/pcllist.asp?swis=140200&address2={}&page={}'
 PROPERTY_LIST_FILE = './PROPERTY_LIST/{}.{}.html'
 
@@ -24,7 +25,15 @@ PROPERTY_DATA_STREET_DIR = './PROPERTY_DATA/{}'
 PROPERTY_DATA_FILE = PROPERTY_DATA_STREET_DIR + '/{}.html'
 
 ONLINE = False
+DEBUG = True
+SKIP_ERRORS = False
 
+def debug(*args, **kwargs):
+    if DEBUG:
+        error(*args, **kwargs)
+
+def error(*args, **kwargs):
+    print(time.strftime('%Y-%m-%d %X'), *args, file=sys.stderr, **kwargs)
 
 def fetch(url, local_path, name=None):
     if not os.path.isfile(local_path):
@@ -57,12 +66,7 @@ def cache_file(property):
 def cache_file_page(page):
     return PROPERTY_LIST_FILE.format(street_dir(page.street), page.number)
 
-
-def debug(*args, **kwargs):
-    print(*args, file=sys.stderr, **kwargs)
-
-
-def output(property):
+def adhoc_out(property):
     property.extended()
     use = 'no use' if not hasattr(property, 'use') else property.use
     print('{}\t{}'.format(use,''))#property.address))
@@ -74,14 +78,17 @@ def extend(property):
 def check(property):
     property.check()
 
+def ndjson(property):
+    property.extended()
+
+    print(json.dumps({k:v for (k,v) in property.__dict__.items() if k != 'street'}))
+
+
 class Breadcrumb:
     def __init__(self, street=None, page=None, property=None):
         self.street = street
         self.page = page
         self.property = property
-
-    def is_before(self, other):
-        return True
 
 class Street:
     def __init__(self, name=None):
@@ -98,22 +105,28 @@ class Page:
 
     def properties(self):
         if not hasattr(self, 'props'):
+            prop_page = PROPERTY_LIST_PAGE_FORMAT.format(urllib.quote_plus(self.street.name), self.number)
             self.props = []
-            html = fetch(PROPERTY_LIST_PAGE_FORMAT.format(self.street.name, self.number), cache_file_page(self), '{}.{}'.format(self.street.name, self.number))
+            html = fetch(prop_page, cache_file_page(self), '{}.{}'.format(self.street.name, self.number))
+
             soup = BeautifulSoup(html, "html.parser")
             for row in soup.find('table',{'class':'grid'}).findAll('tr')[1:]:
                 prop = Property(self.street)
                 tds = row.findAll('td')
+                url = tds[1].find('span').attrs['onclick'][len('showLoading();window.location.href="'):0-len('"')]
+
                 prop.address = tds[1].get_text().strip()
-                if tds[0].find('img'):
-                    prop.photo = tds[0].find('img').attrs['src']
                 prop.sbl = tds[2].get_text().strip()
+                prop.id = url[(url.rfind('=')+1):]
                 prop.lot_size = tds[3].get_text().strip()
                 prop.type = tds[4].get_text().strip()
                 prop.style = tds[5].get_text().strip()
                 prop.year_built = tds[6].get_text().strip()
                 prop.sqft = tds[7].get_text().strip()
-                prop.url = tds[1].find('span').attrs['onclick'][len('showLoading();window.location.href="'):0-len('"')]
+                prop.url = url
+                if tds[0].find('img'):
+                    prop.photo = tds[0].find('img').attrs['src']
+
                 self.props.append(prop)
         return self.props
 
@@ -157,30 +170,53 @@ def get_street_list():
 
     return streets#[326:328]
 
-def crawl(func, iterator=1):
-    last = Breadcrumb()
+def crawl(func, iterator=1, offset=0):
     property_count = 0
-    for i,street in enumerate(get_street_list()[::iterator]):
-        debug('starting work on street #{}: {}'.format((i+1), street.name))
-        if last.is_before(Breadcrumb(street)):
+    for i,street in enumerate(get_street_list()[offset::iterator]):
+        if func == STREET_CRAWL:
+            print(i,street)
+        else:
+            debug('starting work on street #{}: {}'.format((i+1+offset), street.name))
             street_property_count = 0
             page = street.page
             while page is not None:
-                debug('    starting work on page {} of {} (cumulative count: {})' .format(page.number, street.name, (property_count + street_property_count)))
+                debug('    starting work on page {} of {} (cumulative {})' .format(page.number, street.name, (property_count + street_property_count)))
                 street_property_count += len(page.properties())
                 for property in page.properties():
-                    func.__call__(property)
+                    try:
+                        func.__call__(property)
+                    except Exception as e:
+                        error('exception processing property {} on page {} of {} ({})'.format(property.address, page.number, street.name, i))
+                        import traceback
+                        traceback.print_exc()
+                        if SKIP_ERRORS:
+                            error('continuing')
+                            pass
+                        else:
+                            raise e
                 if page.has_next():
                     page = page.get_next()
                 else:
                     page = None
             property_count += street_property_count
-            debug('  loaded {} properties on {} (cumulative {})'.format(street_property_count, street.name, property_count))
+            debug('    loaded {} properties on {} (cumulative {})'.format(street_property_count, street.name, property_count))
+
+STREET_CRAWL = 'STREET_CRAWL'
 
 if __name__ == "__main__":
+    if len(sys.argv) <= 1:
+        raise Exception("USAGE: {} <fetch|ndjson|ls-streets>")
     action = sys.argv[1]
+    offset = 0 if len(sys.argv) <= 2 else int(sys.argv[2])
     if action == 'fetch':
         ONLINE = True
-        crawl(extend, 1)
+        crawl(extend, 1, offset)
+    elif action == 'ndjson':
+        DEBUG = False
+        SKIP_ERRORS = True
+        crawl(ndjson, 1, offset)
+    elif action == 'ls-streets':
+        DEBUG = False
+        crawl(STREET_CRAWL, 1, offset)
     else:
-        crawl(output,1)
+        crawl(adhoc_out, 1, offset)
