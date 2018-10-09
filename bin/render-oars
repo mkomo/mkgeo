@@ -1,0 +1,52 @@
+#!/bin/bash
+
+if [ -z "$4" ]; then
+  echo "USAGE: $0 <joinfile.ndjson> <filterfile.js> <mapperfile.js> <outputname>"
+  exit 1
+fi
+
+a=ro #prefix for RenderOars
+
+JOINFILE=$1
+FILTERFILE=$2
+MAPPERFILE=$3
+OUTPUT=$4
+
+SIZE=8000
+
+set -exv
+
+COMMENT="
+TODO
+categorical map with 1fa homes, schools and green space highlighted
+filter: categorical map with only 1fa homes, schools and greenspace
+* filter: min house br Count
+* score: house location
+* score: house SIZE
+* score: bathroom Count
+* score: garage
+* choropleth: cost per sqft
+* choropleth: cost per acre
+* choropleth: cost per bedroom
+
+other thoughts: property acreage slider
+last sale slider
+zip code filter
+"
+
+JS_MAP_FUNCT="$(cat $MAPPERFILE)"
+
+JS_FILTER_FUNCT="$(cat $FILTERFILE)"
+#JS_FILTER_FUNCT="true"
+
+# DEBUG line
+# ndjson-map -r d3 "$JS_MAP_FUNCT(d), d.properties.fill" < $JOINFILE_WITH_SUBPROPS
+
+# ACTUAL line
+cat $JOINFILE \
+  | ndjson-filter "$JS_FILTER_FUNCT" \
+  | ndjson-map -r d3 "$JS_MAP_FUNCT" \
+  > $OUTPUT.ndjson
+
+geo2svg -n --stroke none -p 1 -w $SIZE -h $SIZE < $OUTPUT.ndjson > $OUTPUT.svg
+convert -monitor $OUTPUT.svg $OUTPUT.png

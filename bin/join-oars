@@ -1,0 +1,29 @@
+#!/bin/bash
+
+if [ -z "$2" ]; then
+  echo "USAGE: $0 <infile.geojson> <oars.ndjson> <outputname>"
+  exit 1
+fi
+
+a=ro #prefix for RenderOars
+
+INFILE=$1
+OARS_FILE=$2
+OUTPUT=$3
+
+NDFILE=_$a.$(echo $INFILE | sed "s/.geojson$/.ndjson/")
+IDFILE=_$a.$(echo $INFILE | sed "s/.geojson$/.id.ndjson/")
+JOINFILE=_$a.$(echo $INFILE | sed "s/.geojson$/.join.oars.ndjson/")
+
+set -exv
+
+# TODO document call to
+#./scrape/oars.py ndjson 2>/dev/null > $OARS_FILE
+
+# TODO check `npm install -g ndjson-cli`
+ndjson-split 'd.features' < $INFILE > $NDFILE
+ndjson-map 'd.id = d.properties.sbl, d' < $NDFILE > $IDFILE
+
+ndjson-join --right 'd.id' $OARS_FILE $IDFILE > $JOINFILE
+
+ndjson-map 'd[1].properties.oars_props = d[0], d[1]' < $JOINFILE
