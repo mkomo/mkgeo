@@ -1,7 +1,7 @@
 #!/bin/bash
 
-if [ -z "$4" ]; then
-  echo "USAGE: $0 <joinfile.ndjson> <filterfile.js> <mapperfile.js> <outputname>"
+if [ -z "$3" ]; then
+  echo "USAGE: $0 <joinfile.ndjson> <filterfile.js> <mapperfile.js> [<outputname>]"
   exit 1
 fi
 
@@ -37,16 +37,17 @@ zip code filter
 JS_MAP_FUNCT="$(cat $MAPPERFILE)"
 
 JS_FILTER_FUNCT="$(cat $FILTERFILE)"
-#JS_FILTER_FUNCT="true"
 
-# DEBUG line
-# ndjson-map -r d3 "$JS_MAP_FUNCT(d), d.properties.fill" < $JOINFILE_WITH_SUBPROPS
+if [ -z "$OUTPUT" ]; then
+  cat $JOINFILE \
+    | ndjson-filter "$JS_FILTER_FUNCT" \
+    | ndjson-map -r d3 "$JS_MAP_FUNCT"
+else
+  cat $JOINFILE \
+    | ndjson-filter "$JS_FILTER_FUNCT" \
+    | ndjson-map -r d3 "$JS_MAP_FUNCT" \
+    > $OUTPUT.ndjson
 
-# ACTUAL line
-cat $JOINFILE \
-  | ndjson-filter "$JS_FILTER_FUNCT" \
-  | ndjson-map -r d3 "$JS_MAP_FUNCT" \
-  > $OUTPUT.ndjson
-
-geo2svg -n --stroke none -p 1 -w $SIZE -h $SIZE < $OUTPUT.ndjson > $OUTPUT.svg
-convert -monitor $OUTPUT.svg $OUTPUT.png
+  geo2svg -n --stroke none -p 1 -w $SIZE -h $SIZE < $OUTPUT.ndjson > $OUTPUT.svg
+  convert -monitor $OUTPUT.svg $OUTPUT.png
+fi
