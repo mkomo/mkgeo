@@ -174,9 +174,9 @@ def crawl(func, iterator=1, offset=0):
     property_count = 0
     for i,street in enumerate(get_street_list()[offset::iterator]):
         if func == STREET_CRAWL:
-            print(i,street)
+            print(i+offset,street)
         else:
-            debug('starting work on street #{}: {}'.format((i+1+offset), street.name))
+            debug('starting work on street #{}: {}'.format((i+offset), street.name))
             street_property_count = 0
             page = street.page
             while page is not None:
@@ -186,7 +186,7 @@ def crawl(func, iterator=1, offset=0):
                     try:
                         func.__call__(property)
                     except Exception as e:
-                        error('exception processing property {} on page {} of {} ({})'.format(property.address, page.number, street.name, i))
+                        error('exception processing property {} on page {} of {} ({})'.format(property.address, page.number, street.name, i+offset))
                         import traceback
                         traceback.print_exc()
                         if SKIP_ERRORS:
