@@ -1,4 +1,4 @@
-function(d, f, colorScale, minmax, scaleType="linear") {
+function(d, f, colorScale, minmax, scaleType="linear", debug) {
   /**
   f: function that maps input d to float value
   colorScale: d3 scale to use (e.g. interpolateRdYlGn)
@@ -9,6 +9,7 @@ function(d, f, colorScale, minmax, scaleType="linear") {
     colorScale = f.colorScale;
     minmax = f.minmax;
     scaleType = f.scaleType;
+    debug = f.debug;
     f = f.f;
   }
 
@@ -25,13 +26,16 @@ function(d, f, colorScale, minmax, scaleType="linear") {
   } else if (i == n) {
     t = 1;
   } else {
-    t = 1.0/n + (1.0/n) * (val - minmax[i - 1])/(minmax[i] - minmax[i - 1]);
+    t = (i*1.0)/n + (1.0/n) * (val - minmax[i - 1])/(minmax[i] - minmax[i - 1]);
   }
 
-  d.t = t;
-  d.color = colorScale(t);
-  d.val = val;
+  if (debug) {
+    d.t = t;
+    d.i = i
+    d.color = colorScale(t);
+    d.val = val;
+    Object.keys(d).forEach(function(key) { if (['i', 't', 'val', 'color'].indexOf(key) < 0) delete d[key]; });
+  }
 
   d.properties.fill = colorScale(t);
-  //Object.keys(d).forEach(function(key) { if (['t', 'val', 'color'].indexOf(key) < 0) delete d[key]; });
 }
