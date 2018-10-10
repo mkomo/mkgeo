@@ -133,7 +133,7 @@ function(d, opts){
       d.properties.fill = "#f1f1f1";
       d.properties.fillOpacity =  0.8;
     } else {
-      Object.keys(object).forEach(function(key) { delete object[key]; });
+      Object.keys(d).forEach(function(key) { delete d[key]; });
     }
   } else {
     d.properties.title += " (" + d.properties.oars_props.use + ")";
@@ -147,7 +147,7 @@ function(d, opts){
         d.properties.fill =  CATEGORY_COLORS[category][0];
         d.properties.fillOpacity =  CATEGORY_COLORS[category][1];
       } else {
-        Object.keys(object).forEach(function(key) { delete object[key]; });
+        Object.keys(d).forEach(function(key) { delete d[key]; });
       }
     }
   }
