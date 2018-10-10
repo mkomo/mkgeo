@@ -1,4 +1,4 @@
-(function(d){
+function(d, opts){
 
   // vega.scheme('category20') from https://vega.github.io/vega/docs/schemes/
   const SCHEME = ["#1f77b4", "#aec7e8", "#ff7f0e", "#ffbb78", "#2ca02c", "#98df8a", "#d62728", "#ff9896", "#9467bd", "#c5b0d5", "#8c564b", "#c49c94", "#e377c2", "#f7b6d2", "#7f7f7f", "#c7c7c7", "#bcbd22", "#dbdb8d", "#17becf", "#9edae5"]
@@ -127,9 +127,14 @@
     d.properties.title = d.properties.oars_props.address;
   }
 
-  if (!d.properties.oars_props || !d.properties.oars_props.use ) {
-    d.properties.fill = "#f1f1f1";
-    d.properties.fillOpacity =  0.8;
+  let includeSecondary = (opts && 'includeSecondary' in opts) ? opts.includeSecondary : true;
+  if (!d.properties.oars_props || !d.properties.oars_props.use) {
+    if (includeSecondary) {
+      d.properties.fill = "#f1f1f1";
+      d.properties.fillOpacity =  0.8;
+    } else {
+      Object.keys(object).forEach(function(key) { delete object[key]; });
+    }
   } else {
     d.properties.title += " (" + d.properties.oars_props.use + ")";
     if (d.properties.oars_props.address && d.properties.oars_props.address in SPECIAL_ADDRESSES) {
@@ -138,10 +143,14 @@
       d.properties.fill = SPECIAL_COLORS[d.properties.oars_props.use];
     } else {
       let category = d.properties.oars_props.use.replace(/(^\s+)/g,'').substr(0,1);
-      d.properties.fill =  CATEGORY_COLORS[category][0];
-      d.properties.fillOpacity =  CATEGORY_COLORS[category][1];
+      if (includeSecondary || CATEGORY_COLORS[category][1] == 1) {
+        d.properties.fill =  CATEGORY_COLORS[category][0];
+        d.properties.fillOpacity =  CATEGORY_COLORS[category][1];
+      } else {
+        Object.keys(object).forEach(function(key) { delete object[key]; });
+      }
     }
   }
 
 
-})(d), d
+}

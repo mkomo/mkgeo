@@ -1,1 +1,1 @@
-(function(d){})(d), d
+function(d){}

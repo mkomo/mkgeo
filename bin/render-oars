@@ -21,33 +21,38 @@ TODO
 categorical map with 1fa homes, schools and green space highlighted
 filter: categorical map with only 1fa homes, schools and greenspace
 * filter: min house br Count
-* score: house location
+* score: house location based on total distance to 3 classes of space
 * score: house SIZE
 * score: bathroom Count
-* score: garage
-* choropleth: cost per sqft
-* choropleth: cost per acre
-* choropleth: cost per bedroom
+* score: garage, porch, driveway, etc.
+* choropleth: acreage [0,0.05,0.1,0.2,0.4,0.8], sqft, acreage_minus_1st_flr_sqft
+* choropleth: mv$ per sqft
+* choropleth: mv$ per acre
+* choropleth: mv$ per bedroom
 
 other thoughts: property acreage slider
 last sale slider
 zip code filter
 "
 
+JS_FILTER_FUNCT="$(cat $FILTERFILE)"
+
 JS_MAP_FUNCT="$(cat $MAPPERFILE)"
 
-JS_FILTER_FUNCT="$(cat $FILTERFILE)"
+JS_DATA="$5"
 
 if [ -z "$OUTPUT" ]; then
   cat $JOINFILE \
     | ndjson-filter "$JS_FILTER_FUNCT" \
-    | ndjson-map -r d3 "$JS_MAP_FUNCT"
+    | ndjson-map -r d3 "($JS_MAP_FUNCT, $JS_DATA)(d), d"
 else
   cat $JOINFILE \
     | ndjson-filter "$JS_FILTER_FUNCT" \
-    | ndjson-map -r d3 "$JS_MAP_FUNCT" \
+    | ndjson-map -r d3 "($JS_MAP_FUNCT)(d, $JS_DATA), d" \
     > $OUTPUT.ndjson
 
   geo2svg -n --stroke none -p 1 -w $SIZE -h $SIZE < $OUTPUT.ndjson > $OUTPUT.svg
+  #TODO add optional script for updating dom to include legend https://bl.ocks.org/mbostock/4573883
+  #https://medium.com/@mbostock/command-line-cartography-part-4-82d0d26df0cf
   convert -monitor $OUTPUT.svg $OUTPUT.png
 fi
