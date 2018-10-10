@@ -1,17 +1,72 @@
 #!/bin/bash
+usage() {
+  echo "USAGE: $0 <joinfile.ndjson> [filterOptions] [mapOptions] [-o <output_prefix>] [-d <js-data>]
+    filterOptions: [-f '<js code>'|-F <filterfile.js>[,<filterfile.js>,...]]
+    mapOptions:    [-m '<js code>'|-M <mapperfile.js>[,<mapperfile.js>,...]]"  1>&2
 
-if [ -z "$3" ]; then
-  echo "USAGE: $0 <joinfile.ndjson> <filterfile.js> <mapperfile.js> [<outputname>]"
   exit 1
+}
+
+JS_FILTER_EXPRESSION='true'
+JS_MAP_FUNCTION='function(d){}'
+JS_DATA='{}'
+
+while [[ -n "$@" ]]; do
+  #echo "iteratate: $1; ARGS=$ARGS" 1>&2
+  case "$1" in
+    -o )
+      OUTPUT="$2"
+      shift; shift
+      ;;
+    -d )
+      JS_DATA="$2"
+      shift; shift
+      ;;
+    -f )
+      JS_FILTER_EXPRESSION="$2"
+      shift; shift
+      ;;
+    -F )
+      JS_FILTER_EXPRESSION="$(cat $2)"
+      shift; shift
+      ;;
+    -m )
+      JS_MAP_EXPRESSION="$2"
+      shift; shift
+      ;;
+    -M )
+      JS_MAP_FUNCTION="$(cat $2)"
+      shift; shift
+      ;;
+    -- )
+      shift
+      ;;
+    -* )
+      usage
+      ;;
+    * )
+      ARGS="$ARGS $1"
+      shift
+      ;;
+  esac
+done
+
+if [ -z "$JS_MAP_EXPRESSION" ]; then
+  JS_MAP_EXPRESSION="($JS_MAP_FUNCTION)(d, $JS_DATA), d"
 fi
 
-a=ro #prefix for RenderOars
+eval set -- "$ARGS"
+if [ -z "$1" -o -n "$2" ]; then
+  usage
+fi
 
 JOINFILE=$1
-FILTERFILE=$2
-MAPPERFILE=$3
-OUTPUT=$4
 
+#echo "JS_DATA=$JS_DATA" 1>&2
+#echo "JS_FILTER_EXPRESSION=$JS_FILTER_EXPRESSION" 1>&2
+#echo "JS_MAP_EXPRESSION=$JS_MAP_EXPRESSION" 1>&2
+
+a=ro #prefix for RenderOars
 SIZE=8000
 
 set -exv
@@ -35,20 +90,16 @@ last sale slider
 zip code filter
 "
 
-JS_FILTER_FUNCT="$(cat $FILTERFILE)"
-
-JS_MAP_FUNCT="$(cat $MAPPERFILE)"
-
-JS_DATA="$5"
-
 if [ -z "$OUTPUT" ]; then
   cat $JOINFILE \
-    | ndjson-filter "$JS_FILTER_FUNCT" \
-    | ndjson-map -r d3 "($JS_MAP_FUNCT, $JS_DATA)(d), d"
+    | ndjson-filter "$JS_FILTER_EXPRESSION" \
+    | ndjson-map -r d3 "$JS_MAP_EXPRESSION" \
+    | ndjson-filter 'typeof d !== "object" || Object.keys(d).length > 0'
 else
   cat $JOINFILE \
-    | ndjson-filter "$JS_FILTER_FUNCT" \
-    | ndjson-map -r d3 "($JS_MAP_FUNCT)(d, $JS_DATA), d" \
+    | ndjson-filter "$JS_FILTER_EXPRESSION" \
+    | ndjson-map -r d3 "$JS_MAP_EXPRESSION" \
+    | ndjson-filter 'typeof d !== "object" || Object.keys(d).length > 0' \
     > $OUTPUT.ndjson
 
   geo2svg -n --stroke none -p 1 -w $SIZE -h $SIZE < $OUTPUT.ndjson > $OUTPUT.svg
