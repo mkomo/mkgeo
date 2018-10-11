@@ -35,7 +35,8 @@ function(d, f, colorScale, minmax, scaleType="linear", debug) {
     d.color = colorScale(t);
     d.val = val;
     Object.keys(d).forEach(function(key) { if (['i', 't', 'val', 'color'].indexOf(key) < 0) delete d[key]; });
+  } else {
+    d.properties.fill = colorScale(t);
   }
 
-  d.properties.fill = colorScale(t);
 }

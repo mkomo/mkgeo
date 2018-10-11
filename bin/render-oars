@@ -1,8 +1,8 @@
 #!/bin/bash
 usage() {
-  echo "USAGE: $0 <joinfile.ndjson> [filterOptions] [mapOptions] [-o <output_prefix>] [-d <js-data>]
-    filterOptions: [-f '<js code>'|-F <filterfile.js>[,<filterfile.js>,...]]
-    mapOptions:    [-m '<js code>'|-M <mapperfile.js>[,<mapperfile.js>,...]]"  1>&2
+  echo "USAGE: $0 <joinfile.ndjson> [filterOptions] [mapOptions] [-d <js-data-arg>] [--crisp] [-o <output_prefix>]
+    filterOptions: [-f '<js-code>'|-F <filterfile.js>[,<filterfile.js>,...]]
+    mapOptions:    [-m '<js-code>'|-M <mapperfile.js>[,<mapperfile.js>,...]]"  1>&2
 
   exit 1
 }
@@ -37,6 +37,10 @@ while [[ -n "$@" ]]; do
     -M )
       JS_MAP_FUNCTION="$(cat $2)"
       shift; shift
+      ;;
+    --crisp )
+      CRISP="true"
+      shift
       ;;
     -- )
       shift
@@ -105,5 +109,13 @@ else
   geo2svg -n --stroke none -p 1 -w $SIZE -h $SIZE < $OUTPUT.ndjson > $OUTPUT.svg
   #TODO add optional script for updating dom to include legend https://bl.ocks.org/mbostock/4573883
   #https://medium.com/@mbostock/command-line-cartography-part-4-82d0d26df0cf
-  convert -monitor $OUTPUT.svg $OUTPUT.png
+
+  if [ -n "$CRISP" ]; then
+    sed -i.bak 's|\(<svg .*\)>|\1 style="shape-rendering:crispEdges">|' $OUTPUT.svg
+    rm $OUTPUT.svg.bak
+  fi
+
+  #use rsvg-convert b/c it's more performant and because it obeys the svg alias crispEdges rules
+  rsvg-convert --background-color='#ffffff' $OUTPUT.svg > $OUTPUT.png
+  #convert -monitor $OUTPUT.svg $OUTPUT.png
 fi
