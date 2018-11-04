@@ -71,7 +71,7 @@ JOINFILE=$1
 #echo "JS_MAP_EXPRESSION=$JS_MAP_EXPRESSION" 1>&2
 
 a=ro #prefix for RenderOars
-SIZE=8000
+SIZE=2000
 
 set -exv
 
