@@ -1,8 +1,15 @@
 #!/bin/bash
 
 if [ -z "$1" ]; then
-  echo "USAGE: $0 <infile.geojson>"
+  echo "USAGE: $0 <infile.geojson> [<projection>]
+    <projection>    default geoMercator. see projections at https://github.com/d3/d3-geo-projection/blob/master/README.md"
   exit 1
+fi
+
+PROJECTION='geoMercator'
+
+if [ -n "$2" ]; then
+  PROJECTION=$2
 fi
 
 INFILE=$1
@@ -12,8 +19,8 @@ PNGFILE=$(echo $INFILE | sed "s/.geojson$/.png/")
 SIZE=8000
 
 echo "creating projection of size $SIZE in $OUTFILE"
-# see projections at https://github.com/d3/d3-geo-projection/blob/master/README.md
-geoproject "d3.geoMercator().fitSize([$SIZE, $SIZE], d)" < $INFILE > $OUTFILE
+#
+geoproject "d3.$PROJECTION().fitSize([$SIZE, $SIZE], d)" < $INFILE > $OUTFILE
 
 echo "rendering svg file from $OUTFILE to $SVGFILE"
 geo2svg -w $SIZE -h $SIZE < $OUTFILE > $SVGFILE
