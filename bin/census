@@ -1,0 +1,17 @@
+#!/bin/bash
+
+set -exv
+
+PREFIX=$1
+WIDTH=2000
+HEIGHT=2000
+
+ogr2ogr -f GeoJSON -t_srs crs:84 "$PREFIX.geojson" "$PREFIX.shp"
+
+geoproject "d3.geoAlbersUsa().fitSize([$WIDTH,$HEIGHT], d)" < $PREFIX.geojson > $PREFIX.projection.geojson
+
+ndjson-split 'd.features' < $PREFIX.projection.geojson > $PREFIX.ndjson
+
+geo2svg -n -w $WIDTH -h $HEIGHT < $PREFIX.ndjson > $PREFIX.svg
+
+rsvg-convert --background-color='#ffffff' $PREFIX.svg > $PREFIX.png
