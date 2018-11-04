@@ -1,0 +1,20 @@
+#!/bin/bash
+
+#merge multiple geojson files so that you can do projection on the extent of all those files
+set -exv
+
+echo '{"type":"FeatureCollection","features":['
+
+count=0
+for INPUT in "$@"
+do
+  count=$(( count + 1))
+  if [ $count -ne $# ]; then
+    (ndjson-split 'd.features' < <(cat $INPUT | tr '\n' ' ')) | sed 's/$/,/'
+  else
+    (ndjson-split 'd.features' < <(cat $INPUT | tr '\n' ' ')) | sed '$!s/$/,/'
+  fi
+
+done
+
+echo ']}'
