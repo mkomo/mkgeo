@@ -1,0 +1,19 @@
+#!/usr/bin/python
+
+import csv
+import sys
+import json
+
+file = sys.argv[1]
+
+# simple loop to print out ndjson of csv file assuming header line.
+# allows filtering of columns by supplying them as trailing args
+
+#TODO allow for no header, or multiline header
+with open(file, mode='r') as infile:
+    reader = csv.reader(infile)
+    header = next(reader)
+    fields = header if len(sys.argv) == 2 else sys.argv[2:]
+    for row in reader:
+        d = dict(zip(header, row))
+        print json.dumps(dict(zip(fields, [d[f] for f in fields])))
