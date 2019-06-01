@@ -100,7 +100,7 @@ zipbitmap = function(d, lib, debug) {
   startBit a number between 0 and (8 - numBits) inclusive representing where to start
   numeric the value between 0 inclusive and 2^(3*numBits) exclusive
    */
-  function c(numBits, startBit, numeric) {
+  function colorTuple(numBits, startBit, numeric) {
     let r = (((numeric & (((1<<(numBits)) - 1) << (2*numBits))) >>> (2*numBits)) * (1 << (8 - numBits))) >> startBit;
     let g = (((numeric & (((1<<(numBits)) - 1) << (1*numBits))) >>> (1*numBits)) * (1 << (8 - numBits))) >> startBit;
     let b = (((numeric & (((1<<(numBits)) - 1) << (0*numBits)))) * (1 << (8 - numBits))) >> startBit;
@@ -117,7 +117,7 @@ zipbitmap = function(d, lib, debug) {
     if (stateKey in STATES_TO_MOVE) {
       statefp = STATES_TO_MOVE[stateKey];
     }
-    return c(2,0,statefp);
+    return colorTuple(2,0,statefp);
   }
 
   function stateFourColor(statefp) {
@@ -125,10 +125,23 @@ zipbitmap = function(d, lib, debug) {
     return STATE_FOUR_COLOR[stateName];
   }
 
+  function isMultiState(c){
+    var r = c[0], g = c[1], b = c[2];
+    //192 = 11 00 00 00 (top 2 bits);
+    return (r & 2) == 2;
+  }
+
   function getStateFromColor(c){
     var r = c[0], g = c[1], b = c[2];
     //192 = 11 00 00 00 (top 2 bits);
-    var state = ((r & 192) >> 2) | ((g & 192) >> 4) | ((b & 192) >> 6);
+    let state;
+
+    if (isMultiState(c)) {
+      state = (((r & 240)/3)  ) | (((g & 240)/3) >> 2) | (((b & 240)/3) >> 4);
+    } else {
+      state = ((r & 192) >> 2) | ((g & 192) >> 4) | ((b & 192) >> 6);
+    }
+
     let stateName = getStateName(state);
     return stateName + ` (${state})`;
   }
@@ -142,9 +155,19 @@ zipbitmap = function(d, lib, debug) {
     return STATE_NAMES[state];
   }
 
-  function zipMultiStateColor(zip) {
-    let zc = c(6,2,zip);
-    return [(sc[0]|zc[0]),(sc[1]|zc[1]),(sc[2]|zc[2])];
+  function zipColorMultiState(zip, multiInd, statefp) {
+    // let sc = stateColor(statefp);
+    let zc = colorTuple(3,2,0)//multiInd);
+
+    return [(zc[0]|8),(zc[1]),(zc[2])];
+    //zip is 17 bits
+    // let top6 = Math.floor(zip/(1<<12))
+
+    // let b0=top6%3
+    // let b1=((top6-b0)/3)%3
+    // let b2=Math.floor(top6/9)
+
+    // return zc; //[(sc[0]|zc[0]),(sc[1]|zc[1]),(sc[2]|zc[2])];
   }
 
   function zipColor(zip, statefp) {
@@ -153,8 +176,10 @@ zipbitmap = function(d, lib, debug) {
     return [(sc[0]|zc[0]),(sc[1]|zc[1]),(sc[2]|zc[2])];
   }
 
+
+
   function zipColorHighBit(zip, statefp) {
-    return c(6,0,zip)
+    return colorTuple(6,0,zip)
   }
 
   function getZipFromColor(c){
@@ -164,7 +189,7 @@ zipbitmap = function(d, lib, debug) {
 
     if (zip == 0) {
       return null;
-    } else if (zip >= MAX_ZIP) {
+    } else if (isMultiState(c)) {
       return 'MULTI_STATE_ZCTA';
     } else {
       return '00000'.substring((zip + '').length) + zip;
@@ -175,7 +200,12 @@ zipbitmap = function(d, lib, debug) {
     var r = c[0], g = c[1], b = c[2];
     var zipr = (r & 63), zipg= (g & 63), zipb = (b & 63);
     var stater = (r & 192) >> 6, stateg=((g & 192) >> 6), stateb=((b & 192) >> 6);
-    return `state: r=${stater};g=${stateg};b=${stateb}; zip: r=${zipr};g=${zipg};b=${zipb}`;
+    return `state: r=${fmt(stater,2)};g=${fmt(stateg,2)};b=${fmt(stateb,2)}\n`
+        +  `  zip: r=  ${fmt(zipr,6,6)};g=  ${fmt(zipg,6,6)};b=  ${fmt(zipb,6,6)}`;
+  }
+
+  function fmt(int, padStart = 8, padEnd) {
+    return int.toString(2).replace(/0/g,'.').padStart(padStart,'.') + ''.padStart((padEnd || 8)-padStart);
   }
 
   if (lib) {
@@ -190,19 +220,19 @@ zipbitmap = function(d, lib, debug) {
     let zip = parseInt(d.properties.ZCTA5CE10);
     let multiInd = MULTI_STATE_ZCTAS.indexOf(zip);
     if (multiInd >= 0) {
-      zip = multiInd;//TODO should be 4*(3+4*multiInd);
-      // d.properties.fillOpacity = 1.0/4;
-      d.properties.fill = "#FFF"//colorString(zipMultiStateColor(zip));
+      d.properties.MULTI_STATE_INDEX = multiInd;
+      d.properties.fillOpacity = 1-Math.sqrt(3/4);
+      d.properties.fill = colorString(zipColorMultiState(zip, multiInd, d.properties.STATEFP));
+      // d.properties.fill = colorString(stateColor(d.properties.STATEFP));
     } else {
-      d.properties.fill = colorString(zipColor(zip, d.properties.STATEFP));
-        // d.properties.fill = colorString(stateColor(d.properties.STATEFP));
+      // d.properties.fill = colorString(zipColor(zip, d.properties.STATEFP));
     }
   } else if (d.properties.STATEFP) {
     d.properties.fill = colorString(stateColor(d.properties.STATEFP));
   }
 
   if (debug) {
-    Object.keys(d.properties).forEach(function(key) { if (['ZCTA5CE10', 'STATEFP', 'fill'].indexOf(key) < 0) delete d.properties[key]; });
+    Object.keys(d.properties).forEach(function(key) { if (['ZCTA5CE10', 'STATEFP', 'fill', 'fillOpacity', 'MULTI_STATE_INDEX'].indexOf(key) < 0) delete d.properties[key]; });
     delete d.type;
     delete d.geometry;
   }
