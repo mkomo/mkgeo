@@ -437,12 +437,12 @@ const MULTI_STATE_ZCTAS_OBJECT = {
       return `MULTI_STATE_ZCTA: (${zipg}, ${zipb})=> ${multiInd}; ${zip} (${states})`;
     }
 
-    var r = c[0], g = c[1], b = c[2];
+    var r = c[0] & 63, g = c[1], b = c[2];
     //63 = 00 11 11 11 (bottom 6 bits)
     r = (r >>> 1) + (((r & 1) == 1) ? 1 : 0);
     var zip = ((r & 63) << 12) | ((g & 63) << 6) | (b & 63);
     if (zip == 0) {
-      return null;
+      return '(no zip)';
     } else {
       return '00000'.substring((zip + '').length) + zip;
     }
