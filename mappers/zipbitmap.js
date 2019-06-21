@@ -427,20 +427,20 @@ const MULTI_STATE_ZCTAS_OBJECT = {
   }
 
   function getZipFromColor(c){
-
+    let r = c[0] & 63, g = c[1], b = c[2];
     if (isMultiState(c)) {
       let zipg = g & 15;
       let zipb = b & 15;
       let multiInd = (zipg << 4) + zipb;
-      zip = MULTI_STATE_ZCTAS[multiInd];
+      let zip = MULTI_STATE_ZCTAS[multiInd];
+      let zipString = ("" + zip).padStart(5,"0");
       let states = MULTI_STATE_ZCTA_MAP[zip].map(state=>getStateName(state)).join(', ')
-      return `MULTI_STATE_ZCTA: (${zipg}, ${zipb})=> ${multiInd}; ${zip} (${states})`;
+      return `${zipString} (MULTI_STATE_ZCTA: ${states})`;
     }
 
-    var r = c[0] & 63, g = c[1], b = c[2];
     //63 = 00 11 11 11 (bottom 6 bits)
     r = (r >>> 1) + (((r & 1) == 1) ? 1 : 0);
-    var zip = ((r & 63) << 12) | ((g & 63) << 6) | (b & 63);
+    let zip = ((r & 63) << 12) | ((g & 63) << 6) | (b & 63);
     if (zip == 0) {
       return '(no zip)';
     } else {
@@ -449,9 +449,9 @@ const MULTI_STATE_ZCTAS_OBJECT = {
   }
 
   function explainGeoColor(c) {
-    var r = c[0], g = c[1], b = c[2];
-    var zipr = (r & 63), zipg= (g & 63), zipb = (b & 63);
-    var stater = (r & 192) >> 6, stateg=((g & 192) >> 6), stateb=((b & 192) >> 6);
+    let r = c[0], g = c[1], b = c[2];
+    let zipr = (r & 63), zipg= (g & 63), zipb = (b & 63);
+    let stater = (r & 192) >> 6, stateg=((g & 192) >> 6), stateb=((b & 192) >> 6);
     return `state: r=${fmt(stater,2)};g=${fmt(stateg,2)};b=${fmt(stateb,2)}\n`
         +  `  zip: r=  ${fmt(zipr,6,6)};g=  ${fmt(zipg,6,6)};b=  ${fmt(zipb,6,6)}`;
   }
@@ -472,9 +472,13 @@ const MULTI_STATE_ZCTAS_OBJECT = {
     let zip = parseInt(d.properties.ZCTA5CE10);
     let multiInd = MULTI_STATE_ZCTAS.indexOf(zip);
     if (multiInd >= 0) {
-      d.properties.MULTI_STATE_INDEX = multiInd;
-      d.properties.fillOpacity = 1-Math.sqrt(3/4);
-      d.properties.fill = colorString(zipColorMultiState(zip, multiInd, d.properties.STATEFP));
+      if (MULTI_STATE_ZCTA_MAP[zip][0] == d.properties.STATEFP) {
+        d.properties.MULTI_STATE_INDEX = multiInd;
+        d.properties.fillOpacity = 1-3/4;
+        d.properties.fill = colorString(zipColorMultiState(zip, multiInd, d.properties.STATEFP));
+      } else {
+        Object.keys(d).forEach(key=>delete d[key]);
+      }
     } else {
       d.properties.fill = colorString(zipColor(zip, d.properties.STATEFP));
     }
@@ -483,7 +487,11 @@ const MULTI_STATE_ZCTAS_OBJECT = {
   }
 
   if (debug) {
-    Object.keys(d.properties).forEach(function(key) { if (['ZCTA5CE10', 'STATEFP', 'fill', 'fillOpacity', 'MULTI_STATE_INDEX'].indexOf(key) < 0) delete d.properties[key]; });
+    Object.keys(d.properties).forEach(function(key) {
+      if (['ZCTA5CE10', 'STATEFP', 'fill', 'fillOpacity', 'MULTI_STATE_INDEX'].indexOf(key) < 0) {
+        delete d.properties[key];
+      }
+    });
     delete d.type;
     delete d.geometry;
   }
