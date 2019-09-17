@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/bin/python
 
 from __future__ import print_function
 
@@ -9,6 +9,7 @@ import os.path
 import time
 import json
 import urllib
+import re
 
 import sys
 reload(sys)
@@ -67,10 +68,19 @@ def cache_file(property):
 def cache_file_page(page):
     return PROPERTY_LIST_FILE.format(street_dir(page.street), page.number)
 
+# these appear to be all the tables included in
+expected_tables = [u'Maps', u'Reports', u'Assessment', u'Structure', u'Property Description', u'Last Property Sale', u'Commerical Site Uses', u'Improvements', u'Land', u'Owner Information', u'Exemptions', u'Special Districts']
+
 def adhoc_out(property):
     property.extended()
-    use = 'no use' if not hasattr(property, 'use') else property.use
-    print('{}\t{}'.format(use,''))#property.address))
+    # use = 'no use' if not hasattr(property, 'use') else property.use
+
+    # novel_tables = [t for t in property.tables if t not in expected_tables]
+    # if len(novel_tables) > 0:
+    #     print('{}\t{}'.format(len(novel_tables), novel_tables))
+
+    if property.structures[0]["house_style"] is None:
+        print(json.dumps({k:v for (k,v) in property.__dict__.items() if k != 'street'}, indent=4))
 
 def extend(property):
     if not property.check():
@@ -81,8 +91,11 @@ def check(property):
 
 def ndjson(property):
     property.extended()
-
     print(json.dumps({k:v for (k,v) in property.__dict__.items() if k != 'street'}))
+
+def pretty(property):
+    property.extended()
+    print(json.dumps({k:v for (k,v) in property.__dict__.items() if k != 'street'}, indent=4))
 
 
 class Breadcrumb:
@@ -150,13 +163,62 @@ class Property:
     def extended(self):
         if not hasattr(self, 'is_extended'):
             self.is_extended = True
-            html = fetch(PROPERTY_DATA_PAGE_FORMAT.format(self.url), cache_file(self), self.address)
+            self.cache_file = cache_file(self)
+            html = fetch(PROPERTY_DATA_PAGE_FORMAT.format(self.url), self.cache_file, self.address)
             soup = BeautifulSoup(html, "html.parser")
-            self.use = soup.find(text='Property Description').parent.parent.parent.findAll('tr')[2].findAll('td')[1].get_text().strip()
+            tables = {t.get_text():t.parent.parent for t in soup.findAll('td',{"class": "headings"})}
+            # print(tables['Assessment'].find('td'))
+
+            self.assessment = {
+                "total": get_table_value(tables, 'Assessment', 'Total'),
+                "total_land": get_table_value(tables, 'Assessment', 'Total Land'),
+                "equalization": get_table_value(tables, 'Assessment', 'Equalization Rate'),
+                "level": get_table_value(tables, 'Assessment', 'Level of Assessment'),
+                "fmv": get_table_value(tables, 'Assessment', 'Full Market Value')
+            }
+
+            self.last_sale = {
+                "price": get_table_value(tables, 'Last Property Sale', 'Sale Price'),
+                "date": get_table_value(tables, 'Last Property Sale', 'Sale Date'),
+                "useable": get_table_value(tables, 'Last Property Sale', 'Useable Sale'),
+                "arms_length": get_table_value(tables, 'Last Property Sale', 'Arms Length')
+            }
+
+            # self.tables = tables.keys()
+            self.sites = [t.get_text().strip() for t in soup.findAll('strong',{"class": "auto-style12"})]
+
+            self.use = get_table_value(tables, 'Property Description', 'Use')
+            self.neighborhood_code = get_table_value(tables, 'Property Description', 'Neighborhood Code')
+
+            owner_addr = tables['Owner Information'].findAll('tr')[2].findAll('td')
+            self.owner = {
+                "address_1": owner_addr[1].get_text(),
+                "city_state_zip": owner_addr[5].get_text()
+            }
+
+            self.structures = [{
+                "year_built": get_table_value(tables, 'Structure', 'Year Built'),
+                "house_style": get_table_value(tables, 'Structure', 'House Style'),
+                "total_sqft": get_table_value(tables, 'Structure', 'Total SQFT *'),
+                "first_story_sqft": get_table_value(tables, 'Structure', '1st Story SQFT *'),
+                "stories": get_table_value(tables, 'Structure', 'Number of Stories'),
+                "bedrooms": get_table_value(tables, 'Structure', 'Bedrooms'),
+                "baths": get_table_value(tables, 'Structure', 'Baths'),
+                "garages": get_table_value(tables, 'Structure', 'Garage(s)'),
+                "garages_sqft": get_table_value(tables, 'Structure', 'Garage(s) SQFT')
+            }]
         return self
 
     def check(self):
         return os.path.isfile(cache_file(self))
+
+def table_string_matches(val, row_key):
+    return type(val) is bs4.element.Tag and val.name == 'td' and val.get_text().strip() == row_key
+
+def get_table_value(tables, table_name, row_key):
+    row = tables[table_name].find(lambda val: table_string_matches(val, row_key))
+    if row:
+        return row.find_next('td').text.strip()
 
 def get_street_list():
     data  = fetch(STREET_LIST_PAGE, STREET_LIST_FILE)
@@ -203,21 +265,27 @@ def crawl(func, iterator=1, offset=0):
             debug('    loaded {} properties on {} (cumulative {})'.format(street_property_count, street.name, property_count))
 
 STREET_CRAWL = 'STREET_CRAWL'
-
-if __name__ == "__main__":
-    if len(sys.argv) <= 1:
-        raise Exception("USAGE: {} <fetch|ndjson|ls-streets>")
-    action = sys.argv[1]
-    offset = 0 if len(sys.argv) <= 2 else int(sys.argv[2])
-    if action == 'fetch':
-        ONLINE = True
-        crawl(extend, 1, offset)
-    elif action == 'ndjson':
-        DEBUG = False
-        SKIP_ERRORS = True
-        crawl(ndjson, 1, offset)
-    elif action == 'ls-streets':
-        DEBUG = False
-        crawl(STREET_CRAWL, 1, offset)
-    else:
-        crawl(adhoc_out, 1, offset)
+try:
+    if __name__ == "__main__":
+        if len(sys.argv) <= 1:
+            raise Exception("USAGE: {} <fetch|ndjson|ls-streets>")
+        action = sys.argv[1]
+        offset = 0 if len(sys.argv) <= 2 else int(sys.argv[2])
+        if action == 'fetch':
+            ONLINE = True
+            crawl(extend, 1, offset)
+        elif action == 'ndjson':
+            # DEBUG = False
+            SKIP_ERRORS = True
+            crawl(ndjson, 1, offset)
+        elif action == 'pretty':
+            DEBUG = False
+            SKIP_ERRORS = True
+            crawl(pretty, 1, offset)
+        elif action == 'ls-streets':
+            DEBUG = False
+            crawl(STREET_CRAWL, 1, offset)
+        else:
+            crawl(adhoc_out, 1, offset)
+except KeyboardInterrupt:
+    pass
