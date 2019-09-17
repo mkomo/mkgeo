@@ -9,8 +9,12 @@ function(d, f, debug) {
     debug = f.debug;
     f = f.f;
   }
-
-  let val = "" + f(d);
+  let val;
+  try {
+    val = "" + f(d);
+  } catch(error) {
+    throw "issue with: " + JSON.stringify(d, null, "  ") + "; " + error;
+  }
   let color = '#' + val.padStart(6, '0');
   if (debug) {
     d.val = val;
