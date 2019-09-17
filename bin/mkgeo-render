@@ -10,6 +10,7 @@ usage() {
 JS_FILTER_EXPRESSION='true'
 JS_MAP_FUNCTION='function(d){}'
 JS_DATA='{}'
+SIZE=2000
 
 while [[ -n "$@" ]]; do
   #echo "iteratate: $1; ARGS=$ARGS" 1>&2
@@ -42,6 +43,10 @@ while [[ -n "$@" ]]; do
       CRISP="true"
       shift
       ;;
+    --size )
+      SIZE=$2
+      shift; shift
+      ;;
     -- )
       shift
       ;;
@@ -71,7 +76,6 @@ JOINFILE=$1
 #echo "JS_MAP_EXPRESSION=$JS_MAP_EXPRESSION" 1>&2
 
 a=ro #prefix for RenderOars
-SIZE=2000
 
 set -exv
 
