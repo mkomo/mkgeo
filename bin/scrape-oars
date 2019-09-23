@@ -15,15 +15,18 @@ import sys
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-DATA_DIR = 'data/buffalo/oars/'
+# TODO mkdirs PROPERTY_DATA_STREET_DIR, PROPERTY_LIST_DIR
+
+DATA_DIR = 'data/buffalo/oars-2019'
 STREET_LIST_PAGE = 'http://www.buffalo.oarsystem.com/assessment/main.asp?swis=140200'
-STREET_LIST_FILE = DATA_DIR + 'STREET_LIST.html'
+STREET_LIST_FILE = DATA_DIR + '/STREET_LIST.html'
 
 PROPERTY_LIST_PAGE_FORMAT = 'http://www.buffalo.oarsystem.com/assessment/pcllist.asp?swis=140200&address2={}&page={}'
-PROPERTY_LIST_FILE = DATA_DIR + 'PROPERTY_LIST/{}.{}.html'
+PROPERTY_LIST_DIR = DATA_DIR + '/PROPERTY_LIST'
+PROPERTY_LIST_FILE = PROPERTY_LIST_DIR + '/{}.{}.html'
 
 PROPERTY_DATA_PAGE_FORMAT = 'http://www.buffalo.oarsystem.com/assessment/{}'
-PROPERTY_DATA_STREET_DIR = DATA_DIR + 'PROPERTY_DATA/{}'
+PROPERTY_DATA_STREET_DIR = DATA_DIR + '/PROPERTY_DATA/{}'
 PROPERTY_DATA_FILE = PROPERTY_DATA_STREET_DIR + '/{}.html'
 
 ONLINE = False
