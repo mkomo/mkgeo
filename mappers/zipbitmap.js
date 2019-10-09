@@ -431,6 +431,10 @@ const MULTI_STATE_ZCTAS_OBJECT = {
   }
 
   function getZipFromColor(c){
+    return getZipDetailFromColor(c).split(' ')[0];
+  }
+
+  function getZipDetailFromColor(c){
     let r = c[0] & 63, g = c[1], b = c[2];
     if (isMultiState(c)) {
       let zipg = g & 15;
@@ -467,6 +471,7 @@ const MULTI_STATE_ZCTAS_OBJECT = {
   if (lib) {
     return {
       getZipFromColor,
+      getZipDetailFromColor,
       getStateFromColor,
       getStateDetailFromColor,
       explainGeoColor
