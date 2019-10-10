@@ -154,6 +154,7 @@ const MULTI_STATE_ZCTAS_OBJECT = {
   "102": 71749
 }
 
+  //zip codes that occur in multiple states mapped to the two STATEFP codes
   const MULTI_STATE_ZCTA_MAP = {
     02861: [44,25],
     03579: [33,23],
@@ -260,6 +261,7 @@ const MULTI_STATE_ZCTAS_OBJECT = {
     99362: [53,41]
   };
 
+  //manual coloring of states in four-color pattern
   const STATE_FOUR_COLOR = {
       HI:"#dddd00", AK:"#44ee33", FL:"#dddd00", SC:"#ee5464", GA:"#44ee33", AL:"#ee5464", NC:"#dddd00",
       TN:"#9930dc", RI:"#ee5464", CT:"#44ee33", MA:"#dddd00", ME:"#ee5464", NH:"#44ee33", VT:"#9930dc",
@@ -379,6 +381,10 @@ const MULTI_STATE_ZCTAS_OBJECT = {
   }
 
   function getStateFromColor(c){
+    return getStateDetailFromColor(c).split(' ')[0];
+  }
+
+  function getStateDetailFromColor(c) {
     var r = c[0], g = c[1], b = c[2];
     let state;
 
@@ -420,13 +426,15 @@ const MULTI_STATE_ZCTAS_OBJECT = {
     return [(sc[0]|zr),(sc[1]|zc[1]),(sc[2]|zc[2])];
   }
 
-
-
   function zipColorHighBit(zip, statefp) {
     return colorTuple(6,0,zip)
   }
 
   function getZipFromColor(c){
+    return getZipDetailFromColor(c).split(' ')[0];
+  }
+
+  function getZipDetailFromColor(c){
     let r = c[0] & 63, g = c[1], b = c[2];
     if (isMultiState(c)) {
       let zipg = g & 15;
@@ -463,7 +471,9 @@ const MULTI_STATE_ZCTAS_OBJECT = {
   if (lib) {
     return {
       getZipFromColor,
+      getZipDetailFromColor,
       getStateFromColor,
+      getStateDetailFromColor,
       explainGeoColor
     }
   }
@@ -482,6 +492,10 @@ const MULTI_STATE_ZCTAS_OBJECT = {
     } else {
       d.properties.fill = colorString(zipColor(zip, d.properties.STATEFP));
     }
+  } else if (d.properties.COUNTYNS) {
+    d.properties.fill = colorString(zipColor(d.properties.GEOID,d.properties.STATEFP));
+  } else if (d.properties.CD115FP) {
+    d.properties.fill = colorString(zipColor(d.properties.GEOID,d.properties.STATEFP));
   } else if (d.properties.STATEFP) {
     d.properties.fill = colorString(stateColor(d.properties.STATEFP));
   }
