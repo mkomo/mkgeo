@@ -1,4 +1,4 @@
-#!/usr/local/bin/python
+#!/usr/bin/env python
 
 from __future__ import print_function
 
@@ -18,6 +18,7 @@ sys.setdefaultencoding('utf8')
 # TODO mkdirs PROPERTY_DATA_STREET_DIR, PROPERTY_LIST_DIR
 
 DATA_DIR = 'data/buffalo/oars-2019'
+
 STREET_LIST_PAGE = 'http://www.buffalo.oarsystem.com/assessment/main.asp?swis=140200'
 STREET_LIST_FILE = DATA_DIR + '/STREET_LIST.html'
 
@@ -126,7 +127,7 @@ class Page:
             self.props = []
             html = fetch(prop_page, cache_file_page(self), '{}.{}'.format(self.street.name, self.number))
 
-            soup = BeautifulSoup(html, "html.parser")
+            soup = BeautifulSoup(html, "html5lib")
             for row in soup.find('table',{'class':'grid'}).findAll('tr')[1:]:
                 prop = Property(self.street)
                 tds = row.findAll('td')
@@ -149,7 +150,7 @@ class Page:
 
     def has_next(self):
         html = fetch(PROPERTY_LIST_PAGE_FORMAT.format(self.street.name, self.number), cache_file_page(self))
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, "html5lib")
         next_elt = len(soup.findAll('table')[0].findAll('td')[3].findAll('a')) > 0
         return next_elt
 
@@ -168,7 +169,7 @@ class Property:
             self.is_extended = True
             self.cache_file = cache_file(self)
             html = fetch(PROPERTY_DATA_PAGE_FORMAT.format(self.url), self.cache_file, self.address)
-            soup = BeautifulSoup(html, "html.parser")
+            soup = BeautifulSoup(html, "html5lib")
             tables = {t.get_text():t.parent.parent for t in soup.findAll('td',{"class": "headings"})}
             # print(tables['Assessment'].find('td'))
 
@@ -227,7 +228,7 @@ def get_street_list():
     data  = fetch(STREET_LIST_PAGE, STREET_LIST_FILE)
 
     debug('parsing street list')
-    soup = BeautifulSoup(data, "html.parser")
+    soup = BeautifulSoup(data, "html5lib")
 
     streets = []
     for option in soup.find('select').findAll('option'):
