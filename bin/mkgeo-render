@@ -1,8 +1,11 @@
 #!/bin/bash
 usage() {
-  echo "USAGE: $0 <joinfile.ndjson> [filterOptions] [mapOptions] [-d <js-data-arg>] [--crisp] [-o <output_prefix>]
-    filterOptions: [-f '<js-code>'|-F <filterfile.js>[,<filterfile.js>,...]]
-    mapOptions:    [-m '<js-code>'|-M <mapperfile.js>[,<mapperfile.js>,...]]"  1>&2
+  echo "USAGE: $0 <joinfile.ndjson> [filterOptions] [mapOptions] [-d <js-data-arg>] [--crisp]
+    -o <output_prefix>
+    --stroke <stroke-color>
+
+filterOptions: [-f '<js-code>'|-F <filterfile.js>[,<filterfile.js>,...]]
+mapOptions:    [-m '<js-code>'|-M <mapperfile.js>[,<mapperfile.js>,...]]"  1>&2
 
   exit 1
 }
@@ -11,6 +14,7 @@ JS_FILTER_EXPRESSION='true'
 JS_MAP_FUNCTION='function(d){}'
 JS_DATA='{}'
 SIZE=2000
+STROKE='none'
 
 while [[ -n "$@" ]]; do
   #echo "iteratate: $1; ARGS=$ARGS" 1>&2
@@ -37,6 +41,10 @@ while [[ -n "$@" ]]; do
       ;;
     -M )
       JS_MAP_FUNCTION="$(cat $2)"
+      shift; shift
+      ;;
+    --stroke )
+      STROKE="$2"
       shift; shift
       ;;
     --crisp )
@@ -79,25 +87,6 @@ a=ro #prefix for RenderOars
 
 set -exv
 
-COMMENT="
-TODO
-categorical map with 1fa homes, schools and green space highlighted
-filter: categorical map with only 1fa homes, schools and greenspace
-* filter: min house br Count
-* score: house location based on total distance to 3 classes of space
-* score: house SIZE
-* score: bathroom Count
-* score: garage, porch, driveway, etc.
-* choropleth: acreage [0,0.05,0.1,0.2,0.4,0.8], sqft, acreage_minus_1st_flr_sqft
-* choropleth: mv$ per sqft
-* choropleth: mv$ per acre
-* choropleth: mv$ per bedroom
-
-other thoughts: property acreage slider
-last sale slider
-zip code filter
-"
-
 if [ -z "$OUTPUT" ]; then
   cat $JOINFILE \
     | ndjson-filter "$JS_FILTER_EXPRESSION" \
@@ -110,7 +99,8 @@ else
     | ndjson-filter 'typeof d !== "object" || Object.keys(d).length > 0' \
     > $OUTPUT.ndjson
 
-  geo2svg -n --stroke none -p 1 -w $SIZE -h $SIZE < $OUTPUT.ndjson > $OUTPUT.svg
+  geo2svg -n --stroke $STROKE -p 1 -w $SIZE -h $SIZE < $OUTPUT.ndjson > $OUTPUT.svg
+  # TODO update this to allow scaling of the svg by including the current viewbox but updating the width and height
   #TODO add optional script for updating dom to include legend https://bl.ocks.org/mbostock/4573883
   #https://medium.com/@mbostock/command-line-cartography-part-4-82d0d26df0cf
 
@@ -122,4 +112,12 @@ else
   #use rsvg-convert b/c it's more performant and because it obeys the svg alias crispEdges rules
   rsvg-convert --background-color='#ffffff' $OUTPUT.svg > $OUTPUT.png
   #convert -monitor $OUTPUT.svg $OUTPUT.png
+
+  # Sometimes color profiles are added that mess up bitmaps (data encoded in colors)
+  if [ -n "$STRIP" ]; then
+    convert $OUTPUT.png -strip $OUTPUT-no-profile.png
+    mv $OUTPUT-no-profile.png $OUTPUT.png
+  fi
+
+  echo "Created $OUTPUT.png"
 fi
