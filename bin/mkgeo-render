@@ -1,6 +1,7 @@
 #!/bin/bash
 usage() {
-  echo "USAGE: $0 <joinfile.ndjson> [filterOptions] [mapOptions] [-d <js-data-arg>] [--crisp]
+  echo "USAGE: $0 <joinfile.ndjson> [filterOptions] [mapOptions] [-d <js-data-arg>]
+    [--crisp] [--strip] [--size <size-of-svg-viewbox>] [--output-size <size-of-png>]
     -o <output_prefix>
     --stroke <stroke-color>
 
@@ -51,14 +52,23 @@ while [[ -n "$@" ]]; do
       CRISP="true"
       shift
       ;;
+    --strip )
+      STRIP="true"
+      shift
+      ;;
     --size )
       SIZE=$2
+      shift; shift
+      ;;
+    --output-size )
+      OUTPUT_SIZE=$2
       shift; shift
       ;;
     -- )
       shift
       ;;
     -* )
+      echo "bad argument $1"
       usage
       ;;
     * )
@@ -105,8 +115,15 @@ else
   #https://medium.com/@mbostock/command-line-cartography-part-4-82d0d26df0cf
 
   if [ -n "$CRISP" ]; then
+    echo "making output crisp"
     sed -i.bak 's|\(<svg .*\)>|\1 style="shape-rendering:crispEdges">|' $OUTPUT.svg
     rm $OUTPUT.svg.bak
+  fi
+
+  if [ -n "$OUTPUT_SIZE" ]; then
+    echo "changing size to $OUTPUT_SIZE"
+    cat $OUTPUT.svg | sed "s|width=\"[0-9]*\"|width=\"$OUTPUT_SIZE\"|" | sed "s|height=\"[0-9]*\"|height=\"$OUTPUT_SIZE\"|" > $OUTPUT.svg.full
+    mv $OUTPUT.svg.full $OUTPUT.svg
   fi
 
   #use rsvg-convert b/c it's more performant and because it obeys the svg alias crispEdges rules
