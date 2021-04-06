@@ -424,6 +424,12 @@ const MULTI_STATE_ZCTAS_OBJECT = {
     }
   }
 
+  function getLabelFromColor(c){
+    let state = getStateFromColor(c),
+      zip = getZipFromColor(c);
+    return zip !== null ? `${zip}, ${state}` : state;
+  }
+
   function explainGeoColor(c) {
     let r = c[0], g = c[1], b = c[2];
     let zipr = (r & 63), zipg= (g & 63), zipb = (b & 63);
@@ -438,6 +444,7 @@ const MULTI_STATE_ZCTAS_OBJECT = {
 
   if (lib) {
     return {
+      getLabelFromColor,
       getZipFromColor,
       getZipDetailFromColor,
       getStateFromColor,
