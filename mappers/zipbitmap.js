@@ -1,43 +1,6 @@
 zipbitmap = function(d, lib, debug) {
 
-/*
-case studies:
-wa/id border:
-99128: [53,16],
-actual multiInd: 80   (1010000)
-apparent multiInd: 48 ( 110000)
-
-wa/or border:
-99362: [53,41]
-actual multiInd: 6   (110)
-apparent multiInd: 5 (101)
-
-id/mt border:
-59847: [30,16],
-actual multiInd: 90   (1011010)
-apparent multiInd: 74 (1001010)
-
-ms/tn border:
-38326: [47,28],
-actual multiInd: 82   (1010010)
-apparent multiInd: 79 (1001111)
-
-la/ar border:
-71749: [22,05],
-actual multiInd: 102   (1100110)
-apparent multiInd:  85 (1001111)
-apparent multiInd:  86 (1001111)
-
-pseudocode for breaking apart multistate zips:
-
-load states into memory
-foreach zip in zips:
-  if zip is multistate:
-
-
-
-*/
-  //expect a
+  const NO_ZIP_MESSAGE = '(no zip)';
   //find zips with more than one state
   //cat data/census/zcta_county_rel_10.txt | cut -d ',' -f 1,2 | sort -u | cut -d ',' -f 1 | dtk uc | grep -v '^1' | cut -f 2 | tr '\n' ','
   const MULTI_STATE_ZCTAS = [57717,65733,79837,84536,56744,59275,99362,81324,20135,89421,88220,21912,56144,
@@ -431,7 +394,8 @@ const MULTI_STATE_ZCTAS_OBJECT = {
   }
 
   function getZipFromColor(c){
-    return getZipDetailFromColor(c).split(' ')[0];
+    const detail = getZipDetailFromColor(c);
+    return detail == NO_ZIP_MESSAGE ? null : detail.split(' ')[0];
   }
 
   function getZipDetailFromColor(c){
@@ -442,15 +406,19 @@ const MULTI_STATE_ZCTAS_OBJECT = {
       let multiInd = (zipg << 4) + zipb;
       let zip = MULTI_STATE_ZCTAS[multiInd];
       let zipString = ("" + zip).padStart(5,"0");
-      let states = MULTI_STATE_ZCTA_MAP[zip].map(state=>getStateName(state)).join(', ')
-      return `${zipString} (MULTI_STATE_ZCTA: ${states})`;
+      if (!MULTI_STATE_ZCTA_MAP[zip]) {
+        console.error('failed to find multistate', zipString, zip, c, multiInd);
+      } else {
+        let states = MULTI_STATE_ZCTA_MAP[zip].map(state=>getStateName(state)).join(', ')
+        return `${zipString} (MULTI_STATE_ZCTA: ${states})`;
+      }
     }
 
     //63 = 00 11 11 11 (bottom 6 bits)
     r = (r >>> 1) + (((r & 1) == 1) ? 1 : 0);
     let zip = ((r & 63) << 12) | ((g & 63) << 6) | (b & 63);
     if (zip == 0) {
-      return '(no zip)';
+      return NO_ZIP_MESSAGE;
     } else {
       return '00000'.substring((zip + '').length) + zip;
     }
