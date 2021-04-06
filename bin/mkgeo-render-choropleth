@@ -1,0 +1,63 @@
+#!/bin/bash
+usage() {
+  echo "USAGE: $0 <inputfile.ndjson> ...
+    -o <output_prefix>"  1>&2
+  exit 1
+}
+
+QUANTILE_COUNT=200
+COLOR_SCALE="interpolateYlOrRd"
+
+while [[ -n "$@" ]]; do
+  #echo "iteratate: $1; ARGS=$ARGS" 1>&2
+  case "$1" in
+    -o )
+      OUTPUT_PREFIX="$2"
+      shift; shift
+      ;;
+    -f )
+      FUNC="$2"
+      shift; shift
+      ;;
+    -q )
+      QUANTILE_COUNT="$2"
+      shift; shift
+      ;;
+    -c )
+      COLOR_SCALE="$2"
+      shift; shift
+      ;;
+    -- )
+      shift
+      ;;
+    -* )
+      echo "bad argument $1"
+      usage
+      ;;
+    * )
+      ARGS="$ARGS $1"
+      shift
+      ;;
+  esac
+done
+
+eval set -- "$ARGS"
+if [ -z "$1" -o -n "$2" ]; then
+  usage
+fi
+
+INPUT_FILE=$1
+
+set -exv
+
+# generate choropleth
+
+cat $INPUT_FILE | ndjson-map $FUNC | dtk quantile 200 | cut -f 2 | ndjson-reduce > $OUTPUT_PREFIX.quantiles.json
+
+mkgeo-render $INPUT_FILE \
+  -M mappers/choropleth.js \
+  -d "{
+    f: d => $FUNC,
+    colorScale: d3.scaleSequential(d3.$COLOR_SCALE),
+    minmax: $(cat $OUTPUT_PREFIX.quantiles.json)
+  }" --output-size 8000 --crisp -o $OUTPUT_PREFIX
