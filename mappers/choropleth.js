@@ -15,12 +15,37 @@ function(d, f, colorScale, minmax, scaleType="linear", debug) {
     f = f.f;
   }
 
-  let val = f(d);
-  let i = 0;
-  let n = minmax.length
-  while (i < n && minmax[i] < val) {
-    i++;
+  const EPSILON = 1e-10;
+
+  /**
+   * return the largest index such that:
+   *
+   * 1. val >= a[index]
+   * 2. index >= min
+   * 3. index <= max
+   *
+   *
+   * @param {*} val
+   * @param {*} a
+   * @param {*} min
+   * @param {*} max
+   */
+  let getMaxBelow = (val, a, min = 0, max = a.length - 1) => {
+    if (val + EPSILON < a[min]) {
+      return 0;
+    } else if (max == min || a[max] - a[min] < EPSILON) {
+      return max;
+    } else if (max == min + 1) {
+      return Math.max(getMaxBelow(val, a, min, min), getMaxBelow(val, a, max, max));
+    } else {
+      let midpoint = Math.floor((min+max)/2);
+      return Math.max(getMaxBelow(val, a, min, midpoint), getMaxBelow(val, a, midpoint, max));
+    }
   }
+
+  let val = f(d);
+  let i = getMaxBelow(val, minmax);
+  let n = minmax.length;
 
   let t;
   if (i == 0) {
@@ -28,15 +53,13 @@ function(d, f, colorScale, minmax, scaleType="linear", debug) {
   } else if (i == n) {
     t = 1;
   } else {
-    t = (i - 1)/(n - 1) + (1/(n - 1)) * (val - minmax[i - 1])/(minmax[i] - minmax[i - 1]);
+    t = (i - 1)/(n - 1) + (1/(n - 1)) * (val - minmax[i])/(minmax[i + 1] - minmax[i]);
   }
 
   if (debug) {
-    d.t = t;
-    d.i = i
-    d.color = colorScale(t);
-    d.val = val;
-    Object.keys(d).forEach(function(key) { if (['i', 't', 'val', 'color'].indexOf(key) < 0) delete d[key]; });
+    let debugObj = {state: d.properties.FULL_NAME, i, t, n, val, color: colorScale(t), minmax: [minmax[i],minmax[i+1]]};
+    Object.keys(d).forEach(key => (delete d[key]));
+    Object.assign(d, debugObj);
   } else {
     d.properties.fill = colorScale(t);
   }
