@@ -5,8 +5,8 @@ usage() {
   exit 1
 }
 
-QUANTILE_COUNT=200
 COLOR_SCALE="interpolateYlOrRd"
+PRECISION=3
 
 while [[ -n "$@" ]]; do
   #echo "iteratate: $1; ARGS=$ARGS" 1>&2
@@ -18,6 +18,14 @@ while [[ -n "$@" ]]; do
     -f )
       FUNC="$2"
       shift; shift
+      ;;
+    -p )
+      PRECISION="$2"
+      shift; shift
+      ;;
+    --no-round )
+      NO_ROUND=true
+      shift
       ;;
     -q )
       QUANTILE_COUNT="$2"
@@ -46,18 +54,42 @@ if [ -z "$1" -o -n "$2" ]; then
   usage
 fi
 
-INPUT_FILE=$1
+INPUT_FILE="$1"
 
-set -exv
+set -e
 
-# generate choropleth
+if [ -z "$QUANTILE_COUNT"]; then
+  # determine how many quantiles are available for given COLOR_SCALE. Use that quantity in the dtk quantile step
+  QUANTILE_COUNT=200
+fi
 
-cat $INPUT_FILE | ndjson-map $FUNC | dtk quantile 200 | cut -f 2 | ndjson-reduce > $OUTPUT_PREFIX.quantiles.json
+if [ -z "$NO_ROUND"]; then
+  #Unless --no-round is specified, round the given function to the precision
+  FUNC="Number(Number.parseFloat($FUNC).toPrecision($PRECISION))"
+fi
 
-mkgeo-render $INPUT_FILE \
+LINE_CHECK=$(head -n $(($QUANTILE_COUNT + 1)) "$INPUT_FILE" | wc -l)
+if [ $LINE_CHECK -lt $(($QUANTILE_COUNT + 1)) ]; then
+  # if file has fewer entries than QUANTILE_COUNT, use # of entries in dtk quantile instead.
+  echo "Fewer lines than quantiles in $INPUT_FILE, setting QUANTILE_COUNT to $(($LINE_CHECK - 1))"
+  QUANTILE_COUNT=$(($LINE_CHECK - 1))
+  QUANTILE_FILE_IS_EXACT=true
+else
+  echo "$INPUT_FILE has more lines than the desired QUANTILE_COUNT ($QUANTILE_COUNT). Proceeding."
+fi
+
+set -x
+echo "generating quantiles ($QUANTILE_COUNT)"
+cat "$INPUT_FILE" | ndjson-map "$FUNC" | dtk quantile $QUANTILE_COUNT | cut -f 2 | ndjson-reduce > $OUTPUT_PREFIX.quantiles.json
+
+mkgeo-render "$INPUT_FILE" \
   -M mappers/choropleth.js \
   -d "{
     f: d => $FUNC,
     colorScale: d3.scaleSequential(d3.$COLOR_SCALE),
     minmax: $(cat $OUTPUT_PREFIX.quantiles.json)
   }" --output-size 8000 --crisp -o $OUTPUT_PREFIX
+
+if [ -n "$QUANTILE_FILE_IS_EXACT" ]; then
+  echo "QUANTILE_FILE_IS_EXACT!"
+fi

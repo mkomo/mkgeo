@@ -45,19 +45,19 @@ function(d, f, colorScale, minmax, scaleType="linear", debug) {
 
   let val = f(d);
   let i = getMaxBelow(val, minmax);
-  let n = minmax.length;
+  let lastIndex = minmax.length - 1;
 
   let t;
   if (i == 0) {
     t = 0;
-  } else if (i == n) {
+  } else if (i == lastIndex) {
     t = 1;
   } else {
-    t = (i - 1)/(n - 1) + (1/(n - 1)) * (val - minmax[i])/(minmax[i + 1] - minmax[i]);
+    t = i/lastIndex + (1/lastIndex) * (val - minmax[i])/(minmax[i + 1] - minmax[i]);
   }
 
   if (debug) {
-    let debugObj = {state: d.properties.FULL_NAME, i, t, n, val, color: colorScale(t), minmax: [minmax[i],minmax[i+1]]};
+    let debugObj = {state: d.properties.FULL_NAME, i, t, lastIndex, val, color: colorScale(t), minmax: [minmax[i],minmax[i+1]]};
     Object.keys(d).forEach(key => (delete d[key]));
     Object.assign(d, debugObj);
   } else {
