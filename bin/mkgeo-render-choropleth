@@ -7,6 +7,7 @@ usage() {
 
 COLOR_SCALE="interpolateYlOrRd"
 PRECISION=3
+QUANTILE_COUNT=200
 
 while [[ -n "$@" ]]; do
   #echo "iteratate: $1; ARGS=$ARGS" 1>&2
@@ -57,11 +58,6 @@ fi
 INPUT_FILE="$1"
 
 set -e
-
-if [ -z "$QUANTILE_COUNT"]; then
-  # determine how many quantiles are available for given COLOR_SCALE. Use that quantity in the dtk quantile step
-  QUANTILE_COUNT=200
-fi
 
 if [ -z "$NO_ROUND"]; then
   #Unless --no-round is specified, round the given function to the precision
