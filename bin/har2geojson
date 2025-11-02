@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+import sys
+import json
+import gzip
+import base64
+import subprocess
+from google.protobuf import json_format
+from mapbox_vector_tile import decode
+
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
+def is_feature_server_description(entry):
+    url = entry["request"]["url"]
+    return "FeatureServer" in url and url.endswith("f=json")
+
+def is_pbf_entry(entry):
+    url = entry["request"]["url"]
+    # eprint(url, ".pbf" in url or "f=pbf" in url)
+    return url.endswith(".pbf") or "f=pbf" in url
+
+def extract_pbf_entries(har):
+    entries = {}
+    schemata = {}
+    for entry in har["log"]["entries"]:
+        url = entry["request"]["url"]
+        if is_pbf_entry(entry) and url not in entries:
+            content = entry.get("response", {}).get("content", {})
+            encoding = content.get("encoding")
+            text = content.get("text")
+            if 'World_Basemap_v2/VectorTileServer/tile/15/12053/9206.pbf' in url:
+                eprint(f"!!!!!!!!!!9206 {json.dumps(entry.get("response", {}), indent=4)}")
+                pbf_binary = decode_pbf_content(text, encoding)
+                tile = decode(pbf_binary)
+                # eprint(tile)
+                features = tile_features_to_geojson(tile, url)
+                eprint(f"features: {features}")
+            if text:
+                entries[entry["request"]["url"]] = ((url, text, encoding))
+        elif is_feature_server_description(entry):
+            content = entry.get("response", {}).get("content", {})
+            encoding = content.get("encoding")
+            text = content.get("text")  
+            # eprint(f"!!!!!!!!!! {json.dumps(json.loads(text), indent=4)}")
+            if text:
+                feature_server_key = entry["request"]["url"].split('?')[0]
+                schemata[feature_server_key] = ((entry["request"]["url"], text, encoding))
+
+
+    return entries, schemata
+
+def decode_pbf_content(encoded_text, encoding):
+    binary = base64.b64decode(encoded_text) if encoding == "base64" else encoded_text.encode("latin1")
+    try:
+        return gzip.decompress(binary)
+    except OSError:
+        return binary
+    
+
+def decode_protobuf_base64(base64_data, url, schemata):
+    # return dict()
+    # Decode the base64 data into binary protobuf
+    binary_data = base64.b64decode(base64_data)
+
+    # Use protoc to decode the binary data
+    result = subprocess.run(
+        ["protoc", "--decode_raw"],
+        input=binary_data,
+        capture_output=True
+    )
+
+    # eprint(f"raw pbf data for {url}:\n{result.stdout.decode('utf-8')}")
+    output_lines = result.stdout.decode('utf-8').strip().split("\n")
+    output_lines = [line.strip() for line in output_lines]
+
+    # Define an empty dictionary to store the output
+    output_dict = {}
+
+    # Define a stack to keep track of the nested dictionaries
+    stack = [output_dict]
+
+    # Iterate through the lines and add the key-value pairs to the dictionary
+    for line in output_lines:
+        if ": " in line:
+            key, value = line.split(": ", 1)
+            stack[-1][key] = value
+        elif "{" in line:
+            key = line.replace("{", "")
+            new_dict = {}
+            stack[-1][key] = new_dict
+            stack.append(new_dict)
+        elif "}" in line:
+            stack.pop()
+    return output_dict
+
+def tile_features_to_geojson(tile, url):
+    features = []
+    for layer_name, layer in tile.items():
+        for feature in layer["features"]:
+            feature["properties"]["_mk_source"] = url
+            features.append({
+                "type": "Feature",
+                "geometry": feature["geometry"],
+                "properties": feature["properties"],
+                "id": feature.get("id"),
+                "layer": layer_name
+            })
+    return features
+
+def main():
+    if len(sys.argv) != 2:
+        eprint(f"Usage: {sys.argv[0]} input.har")
+        sys.exit(1)
+
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        har = json.load(f)
+
+    entries, schemata = extract_pbf_entries(har)
+
+    for url, text, encoding in entries.values():
+        try:
+            # eprint(f"!!! {url}\n\t{text}")
+            pbf_binary = decode_pbf_content(text, encoding)
+            tile = decode(pbf_binary)
+            # eprint(tile)
+            features = tile_features_to_geojson(tile, url)
+            if len(features) > 0:
+                eprint(f"found {len(features)} features in {url}")
+                for feature in features:
+                    print(json.dumps(feature))
+            else:
+                decoded = decode_protobuf_base64(text, url, schemata)
+                print(json.dumps(decoded))
+
+        except Exception as e:
+            eprint(f"Error processing {url}: {e}")
+            raise e
+
+try:
+    if __name__ == "__main__":
+        main()
+except BrokenPipeError:
+    sys.stderr.close()
+    sys.exit(32)
+except KeyboardInterrupt:
+    sys.stderr.close()
+    sys.exit(130)
