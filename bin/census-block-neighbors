@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Print the Census blocks adjacent to a GEOID20 value."""
+
+import argparse
+import csv
+import sys
+from pathlib import Path
+
+
+DEFAULT_OUTPUT_DIR = Path("data/buffalo")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("geoid20", help="15-digit Census block GEOID, e.g. 360290067014000")
+    parser.add_argument(
+        "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
+        help="Directory containing census_blocks_2020_adjacency outputs",
+    )
+    args = parser.parse_args()
+
+    index_path = args.output_dir / "census_blocks_2020_adjacency_index.csv"
+    matrix_path = args.output_dir / "census_blocks_2020_adjacency.mtx"
+    try:
+        with index_path.open(newline="", encoding="utf-8") as source:
+            rows = list(csv.DictReader(source))
+        by_index = {int(row["matrix_index"]): row for row in rows}
+        target_index = next(
+            index for index, row in by_index.items() if row["GEOID20"] == args.geoid20
+        )
+    except FileNotFoundError:
+        parser.error(f"adjacency output not found; run bin/generate-census-block-adjacency first ({index_path})")
+    except StopIteration:
+        parser.error(f"GEOID20 not found in the adjacency index: {args.geoid20}")
+
+    neighbors = set()
+    try:
+        with matrix_path.open(encoding="utf-8") as source:
+            for line in source:
+                fields = line.split()
+                if len(fields) != 2:  # Matrix Market header/comments and dimensions
+                    continue
+                left, right = map(int, fields)
+                if left == target_index:
+                    neighbors.add(right)
+                elif right == target_index:
+                    neighbors.add(left)
+    except FileNotFoundError:
+        parser.error(f"adjacency matrix not found; run bin/generate-census-block-adjacency first ({matrix_path})")
+
+    target = by_index[target_index]
+    columns = ["matrix_index", "GEOID20", "TRACTCE20", "BLOCKCE20", "NAME20", "degree", "streets"]
+    for row in by_index.values():
+        row.setdefault("streets", "")  # supports indexes generated before street support
+    writer = csv.DictWriter(sys.stdout, fieldnames=columns)
+    print(f"# {target['GEOID20']} (matrix index {target_index}); {len(neighbors)} adjacent blocks")
+    writer.writeheader()
+    for index in sorted(neighbors, key=lambda item: by_index[item]["GEOID20"]):
+        writer.writerow(by_index[index])
+
+
+if __name__ == "__main__":
+    main()

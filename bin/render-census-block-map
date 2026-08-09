@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Render a verified four-colored Census-block adjacency map as SVG."""
+
+import argparse
+import csv
+import html
+import math
+import re
+import sys
+from collections import deque
+from pathlib import Path
+
+
+RING_PATTERN = re.compile(r"\(([^()]+)\)")
+COLORS = ("#e76f51", "#2a9d8f", "#457b9d", "#e9c46a")
+DISTANCE_PATTERN = re.compile(r"distancefrom:([^,]+)(?:,upto:([0-9]+))?$")
+
+
+def read_index(path):
+    with path.open(newline="", encoding="utf-8") as source:
+        rows = list(csv.DictReader(source))
+    if not rows or "matrix_index" not in rows[0] or "GEOID20" not in rows[0]:
+        raise ValueError(f"invalid adjacency index: {path}")
+    return {int(row["matrix_index"]): row["GEOID20"] for row in rows}
+
+
+def read_edges(path, indices):
+    graph = {index: set() for index in indices}
+    with path.open(encoding="utf-8") as source:
+        for line in source:
+            fields = line.split()
+            if len(fields) != 2:  # Matrix Market header/comments and dimensions
+                continue
+            left, right = map(int, fields)
+            if left not in graph or right not in graph:
+                raise ValueError(f"matrix references an index absent from {path}: {left}, {right}")
+            graph[left].add(right)
+            graph[right].add(left)
+    return graph
+
+
+def four_color(graph):
+    """Color with backtracking DSATUR; never emit an invalid map."""
+    colors = {}
+
+    # A simple greedy DSATUR pass can choose an unfortunate color early on.
+    # Backtracking preserves DSATUR's effective ordering while revisiting only
+    # those rare choices that lead to a four-color conflict.
+    sys.setrecursionlimit(max(sys.getrecursionlimit(), len(graph) + 100))
+
+    def assign():
+        if len(colors) == len(graph):
+            return True
+        candidates = [node for node in graph if node not in colors]
+        node = max(
+            candidates,
+            key=lambda item: (len({colors[n] for n in graph[item] if n in colors}), len(graph[item]), -item),
+        )
+        unavailable = {colors[neighbor] for neighbor in graph[node] if neighbor in colors}
+        available = [color for color in range(4) if color not in unavailable]
+        for color in available:
+            colors[node] = color
+            if assign():
+                return True
+            del colors[node]
+        return False
+
+    if not assign():
+        raise ValueError("could not find a valid four-coloring; no SVG was written")
+    for left, neighbors in graph.items():
+        for right in neighbors:
+            if colors[left] == colors[right]:
+                raise ValueError(f"invalid coloring: {left} and {right} share color {colors[left]}")
+    return colors
+
+
+def graph_distances(graph, start):
+    distances = {start: 0}
+    queue = deque([start])
+    while queue:
+        node = queue.popleft()
+        for neighbor in graph[node]:
+            if neighbor not in distances:
+                distances[neighbor] = distances[node] + 1
+                queue.append(neighbor)
+    return distances
+
+
+def interpolate_color(position):
+    """Return a perceptually distinct purple-to-yellow color for 0 <= position <= 1."""
+    start, end = (68, 1, 84), (253, 231, 37)
+    return "#" + "".join(f"{round(left + (right - left) * position):02x}" for left, right in zip(start, end))
+
+
+def choose_colors(graph, index_to_geoid, coloring):
+    if coloring == "fourcolor":
+        color_numbers = four_color(graph)
+        return ({index_to_geoid[index]: COLORS[color] for index, color in color_numbers.items()}, "Four-color adjacency map", None)
+
+    match = DISTANCE_PATTERN.fullmatch(coloring)
+    if not match:
+        raise ValueError("--coloring must be fourcolor, distancefrom:<blockid>, or distancefrom:<blockid>,upto:<max>")
+    block_id, max_steps_text = match.groups()
+    geoid_to_index = {geoid: index for index, geoid in index_to_geoid.items()}
+    if block_id not in geoid_to_index:
+        raise ValueError(f"distance source GEOID20 is not in the adjacency index: {block_id}")
+    max_steps = int(max_steps_text) if max_steps_text is not None else None
+    distances = graph_distances(graph, geoid_to_index[block_id])
+    scale_max = max_steps if max_steps is not None else max(distances.values())
+    scale_max = max(scale_max, 1)
+    colors = {}
+    for index, geoid in index_to_geoid.items():
+        distance = distances.get(index)
+        colors[geoid] = "#d1d5db" if distance is None or (max_steps is not None and distance > max_steps) else interpolate_color(distance / scale_max)
+    title = f"Graph distance from Census block {block_id}"
+    if max_steps is not None:
+        title += f" (up to {max_steps} steps)"
+    return colors, title, {"source": block_id, "max_steps": max_steps, "furthest_distance": max(distances.values())}
+
+
+def rings(wkt):
+    for ring_text in RING_PATTERN.findall(wkt or ""):
+        points = []
+        for item in ring_text.split(","):
+            values = item.strip().split()
+            if len(values) >= 2:
+                points.append((float(values[0]), float(values[1])))
+        if len(points) >= 3:
+            yield points
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("census_csv", type=Path, help="Census Blocks CSV containing the_geom and GEOID20")
+    parser.add_argument("adjacency_matrix", type=Path, help="Matrix Market .mtx adjacency file")
+    parser.add_argument("--index", type=Path, help="Matrix index CSV (defaults beside the adjacency matrix)")
+    parser.add_argument("--output", type=Path, help="SVG destination (defaults depend on --coloring)")
+    parser.add_argument("--width", type=int, default=1600, help="SVG width in pixels (default: 1600)")
+    parser.add_argument(
+        "--coloring", default="fourcolor",
+        help="fourcolor, distancefrom:<blockid>, or distancefrom:<blockid>,upto:<max> (default: fourcolor)",
+    )
+    args = parser.parse_args()
+
+    if args.output is None:
+        args.output = Path("output/census_blocks_2020_four_color.svg" if args.coloring == "fourcolor" else "output/census_blocks_2020_distance.svg")
+
+    index_path = args.index or args.adjacency_matrix.with_name("census_blocks_2020_adjacency_index.csv")
+    if args.width < 100:
+        parser.error("--width must be at least 100")
+    for path in (args.census_csv, args.adjacency_matrix, index_path):
+        if not path.is_file():
+            parser.error(f"file not found: {path}")
+
+    index_to_geoid = read_index(index_path)
+    graph = read_edges(args.adjacency_matrix, index_to_geoid)
+    colors_by_geoid, title, distance_legend = choose_colors(graph, index_to_geoid, args.coloring)
+
+    shapes = []
+    min_lon = min_lat = float("inf")
+    max_lon = max_lat = float("-inf")
+    with args.census_csv.open(newline="", encoding="utf-8-sig") as source:
+        reader = csv.DictReader(source)
+        if not {"the_geom", "GEOID20"}.issubset(reader.fieldnames or []):
+            parser.error("Census CSV must contain the_geom and GEOID20 columns")
+        for row in reader:
+            block_rings = list(rings(row["the_geom"]))
+            if not block_rings:
+                continue
+            for ring in block_rings:
+                for lon, lat in ring:
+                    min_lon, max_lon = min(min_lon, lon), max(max_lon, lon)
+                    min_lat, max_lat = min(min_lat, lat), max(max_lat, lat)
+            shapes.append((row["GEOID20"], block_rings))
+    if not shapes:
+        raise ValueError("no usable geometry found")
+
+    # Compress longitude by latitude so the SVG has approximately geographic proportions.
+    longitude_scale = math.cos(math.radians((min_lat + max_lat) / 2))
+    map_width = (max_lon - min_lon) * longitude_scale
+    map_height = max_lat - min_lat
+    padding = 12
+    scale = (args.width - 2 * padding) / map_width
+    map_canvas_height = math.ceil(map_height * scale + 2 * padding)
+    canvas_height = map_canvas_height + 42
+
+    def point(lon, lat):
+        return (padding + (lon - min_lon) * longitude_scale * scale, padding + (max_lat - lat) * scale)
+
+    paths = []
+    for geoid, block_rings in shapes:
+        if geoid not in colors_by_geoid:
+            raise ValueError(f"Census GEOID absent from adjacency index: {geoid}")
+        commands = []
+        for ring in block_rings:
+            x, y = point(*ring[0])
+            commands.append(f"M{x:.2f},{y:.2f}")
+            commands.extend(f"L{x:.2f},{y:.2f}" for x, y in (point(lon, lat) for lon, lat in ring[1:]))
+            commands.append("Z")
+        paths.append(f'<path data-geoid="{html.escape(geoid)}" fill="{colors_by_geoid[geoid]}" d="{" ".join(commands)}"/>')
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    svg = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {args.width} {canvas_height}" width="{args.width}" height="{canvas_height}">',
+        f"<title>{html.escape(title)}</title>",
+        "<style>path{stroke:#fff;stroke-width:.35;fill-rule:evenodd}path:hover{stroke:#111;stroke-width:1.5}</style>",
+        *paths,
+    ]
+    if distance_legend:
+        gradient_id = "distance-gradient"
+        legend_width = min(350, args.width - 180)
+        legend_x = 12
+        legend_y = map_canvas_height + 13
+        legend_max = distance_legend["max_steps"] if distance_legend["max_steps"] is not None else distance_legend["furthest_distance"]
+        svg.extend([
+            "<defs><linearGradient id=\"distance-gradient\"><stop offset=\"0%\" stop-color=\"#440154\"/><stop offset=\"100%\" stop-color=\"#fde725\"/></linearGradient></defs>",
+            f'<rect x="{legend_x}" y="{legend_y}" width="{legend_width}" height="14" fill="url(#{gradient_id})"/>',
+            f'<text x="{legend_x}" y="{legend_y + 29}" font-family="sans-serif" font-size="14">0 ({html.escape(distance_legend["source"])})</text>',
+            f'<text x="{legend_x + legend_width}" y="{legend_y + 29}" text-anchor="end" font-family="sans-serif" font-size="14">{legend_max} steps</text>',
+        ])
+        if distance_legend["max_steps"] is not None:
+            svg.append(f'<text x="{legend_x + legend_width + 12}" y="{legend_y + 12}" font-family="sans-serif" font-size="14" fill="#4b5563">gray: farther away</text>')
+    svg.append("</svg>")
+    args.output.write_text("\n".join(svg) + "\n", encoding="utf-8")
+    if args.coloring == "fourcolor":
+        print(f"Verified four-coloring of {len(graph):,} blocks and wrote {args.output}")
+    else:
+        print(f"Computed graph-distance coloring of {len(graph):,} blocks and wrote {args.output}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError, csv.Error) as error:
+        print(f"error: {error}", file=sys.stderr)
+        sys.exit(1)

@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""Report Census block statistics and build a shared-boundary adjacency matrix.
+
+The input is the CSV exported by Erie County's Census Blocks layer.  This uses
+only the Python standard library: two blocks are adjacent when they share at
+least one complete WKT boundary segment.  Corner-only contacts are excluded.
+"""
+
+import argparse
+import csv
+import json
+import re
+import sys
+from collections import Counter, defaultdict
+from decimal import Decimal
+from itertools import combinations
+from pathlib import Path
+
+
+RING_PATTERN = re.compile(r"\(([^()]+)\)")
+
+
+def coordinate(value):
+    """Canonicalize coordinate strings without introducing float rounding."""
+    return str(Decimal(value))
+
+
+def boundary_segments(wkt):
+    """Yield normalized, undirected segments from POLYGON/MULTIPOLYGON WKT."""
+    for ring_text in RING_PATTERN.findall(wkt or ""):
+        points = []
+        for item in ring_text.split(","):
+            fields = item.strip().split()
+            if len(fields) < 2:
+                raise ValueError(f"Invalid WKT coordinate: {item!r}")
+            points.append((coordinate(fields[0]), coordinate(fields[1])))
+        for first, second in zip(points, points[1:]):
+            if first != second:
+                yield tuple(sorted((first, second)))
+
+
+def integer(value):
+    return int((value or "0").replace(",", ""))
+
+
+def write_matrix(path, size, edges):
+    """Write a symmetric, zero-diagonal Matrix Market coordinate matrix."""
+    with path.open("w", encoding="utf-8") as output:
+        output.write("%%MatrixMarket matrix coordinate pattern symmetric\n")
+        output.write("% Census blocks sharing one or more boundary segments\n")
+        output.write(f"{size} {size} {len(edges)}\n")
+        for left, right in sorted(edges):
+            # Matrix Market indices are one-based; only one triangle is stored.
+            output.write(f"{left + 1} {right + 1}\n")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input", type=Path, help="Census Blocks CSV to process")
+    parser.add_argument(
+        "--assessment-file", type=Path,
+        help="Optional assessment-roll CSV with Street and GEOID20_block columns",
+    )
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("data/buffalo"),
+        help="Directory for census_blocks_2020_adjacency.{mtx,index.csv,stats.json}",
+    )
+    args = parser.parse_args()
+
+    if not args.input.is_file():
+        parser.error(f"input file not found: {args.input}")
+    if args.assessment_file and not args.assessment_file.is_file():
+        parser.error(f"assessment file not found: {args.assessment_file}")
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    blocks = []
+    segment_owners = defaultdict(set)
+    tract_counts = Counter()
+    place_counts = Counter()
+    geometry_counts = Counter()
+    land_areas = []
+    water_areas = []
+    bounds = [None, None, None, None]  # min longitude, min latitude, max longitude, max latitude
+
+    with args.input.open(newline="", encoding="utf-8-sig") as source:
+        reader = csv.DictReader(source)
+        required = {"the_geom", "GEOID20", "TRACTCE20", "ALAND20", "AWATER20"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            parser.error("missing required CSV columns: " + ", ".join(sorted(missing)))
+        for index, row in enumerate(reader):
+            geoid = row["GEOID20"]
+            if not geoid:
+                parser.error(f"row {index + 2} has no GEOID20")
+            blocks.append(row)
+            tract_counts[row["TRACTCE20"]] += 1
+            place_counts[row.get("PLACE", "") or "(unassigned)"] += 1
+            geometry_counts[(row.get("the_geom", "").split(" ", 1)[0] or "(empty)")] += 1
+            land_areas.append(integer(row["ALAND20"]))
+            water_areas.append(integer(row["AWATER20"]))
+            for segment in boundary_segments(row["the_geom"]):
+                segment_owners[segment].add(index)
+                for lon, lat in segment:
+                    lon, lat = Decimal(lon), Decimal(lat)
+                    bounds[0] = lon if bounds[0] is None or lon < bounds[0] else bounds[0]
+                    bounds[1] = lat if bounds[1] is None or lat < bounds[1] else bounds[1]
+                    bounds[2] = lon if bounds[2] is None or lon > bounds[2] else bounds[2]
+                    bounds[3] = lat if bounds[3] is None or lat > bounds[3] else bounds[3]
+
+    edges = set()
+    for owners in segment_owners.values():
+        edges.update(combinations(sorted(owners), 2))
+    degrees = [0] * len(blocks)
+    for left, right in edges:
+        degrees[left] += 1
+        degrees[right] += 1
+
+    streets_by_geoid = defaultdict(set)
+    assessment_rows = 0
+    matched_assessment_rows = 0
+    census_geoids = {block["GEOID20"] for block in blocks}
+    if args.assessment_file:
+        with args.assessment_file.open(newline="", encoding="utf-8-sig") as source:
+            reader = csv.DictReader(source)
+            required = {"Street", "GEOID20_block"}
+            missing = required - set(reader.fieldnames or [])
+            if missing:
+                parser.error("assessment file missing required columns: " + ", ".join(sorted(missing)))
+            for row in reader:
+                assessment_rows += 1
+                geoid = (row["GEOID20_block"] or "").strip()
+                street = (row["Street"] or "").strip()
+                if geoid in census_geoids:
+                    matched_assessment_rows += 1
+                    if street:
+                        streets_by_geoid[geoid].add(street)
+
+    stem = args.output_dir / "census_blocks_2020_adjacency"
+    matrix_path = stem.with_suffix(".mtx")
+    index_path = args.output_dir / "census_blocks_2020_adjacency_index.csv"
+    stats_path = args.output_dir / "census_blocks_2020_adjacency_stats.json"
+    write_matrix(matrix_path, len(blocks), edges)
+    with index_path.open("w", newline="", encoding="utf-8") as output:
+        writer = csv.writer(output)
+        writer.writerow(["matrix_index", "GEOID20", "TRACTCE20", "BLOCKCE20", "NAME20", "degree", "streets"])
+        for index, block in enumerate(blocks, start=1):
+            streets = "; ".join(sorted(streets_by_geoid[block["GEOID20"]], key=str.casefold))
+            writer.writerow([index, block["GEOID20"], block["TRACTCE20"], block.get("BLOCKCE20", ""), block.get("NAME20", ""), degrees[index - 1], streets])
+
+    stats = {
+        "input": str(args.input),
+        "blocks": len(blocks),
+        "tracts": len(tract_counts),
+        "places": dict(sorted(place_counts.items())),
+        "geometry_types": dict(sorted(geometry_counts.items())),
+        "area_square_meters": {
+            "land_total": sum(land_areas), "land_min": min(land_areas), "land_max": max(land_areas),
+            "water_total": sum(water_areas), "water_min": min(water_areas), "water_max": max(water_areas),
+        },
+        "bounds_wgs84": {"min_longitude": str(bounds[0]), "min_latitude": str(bounds[1]), "max_longitude": str(bounds[2]), "max_latitude": str(bounds[3])},
+        "adjacency": {"definition": "blocks sharing a complete boundary segment; corner contacts excluded", "undirected_edges": len(edges), "isolated_blocks": sum(degree == 0 for degree in degrees), "degree_min": min(degrees), "degree_max": max(degrees), "degree_mean": sum(degrees) / len(degrees)},
+    }
+    if args.assessment_file:
+        stats["assessment_streets"] = {
+            "input": str(args.assessment_file),
+            "rows": assessment_rows,
+            "rows_matching_census_blocks": matched_assessment_rows,
+            "blocks_with_streets": len(streets_by_geoid),
+            "unique_streets": len({street for streets in streets_by_geoid.values() for street in streets}),
+        }
+    stats_path.write_text(json.dumps(stats, indent=2) + "\n", encoding="utf-8")
+
+    print(f"Blocks: {stats['blocks']:,}; tracts: {stats['tracts']:,}; adjacency edges: {len(edges):,}")
+    print(f"Degree (min/mean/max): {min(degrees)}/{stats['adjacency']['degree_mean']:.2f}/{max(degrees)}; isolated: {stats['adjacency']['isolated_blocks']}")
+    print(f"Wrote {matrix_path}, {index_path}, and {stats_path}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError, csv.Error) as error:
+        print(f"error: {error}", file=sys.stderr)
+        sys.exit(1)
