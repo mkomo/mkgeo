@@ -453,6 +453,14 @@ const MULTI_STATE_ZCTAS_OBJECT = {
     }
   }
 
+  function setFill(color, value, explanation) {
+    d.properties.fill = color;
+    d.properties.fill_trace = {
+      value_used: value,
+      value_explanation: explanation
+    };
+  }
+
   if (d.properties.ZCTA5CE10) {
     let zip = parseInt(d.properties.ZCTA5CE10);
     let multiInd = MULTI_STATE_ZCTAS.indexOf(zip);
@@ -460,24 +468,24 @@ const MULTI_STATE_ZCTAS_OBJECT = {
       if (MULTI_STATE_ZCTA_MAP[zip][0] == d.properties.STATEFP) {
         d.properties.MULTI_STATE_INDEX = multiInd;
         d.properties.fillOpacity = 1-3/4;
-        d.properties.fill = colorString(zipColorMultiState(zip, multiInd, d.properties.STATEFP));
+        setFill(colorString(zipColorMultiState(zip, multiInd, d.properties.STATEFP)), zip, "color generated from multi-state ZCTA and state");
       } else {
         Object.keys(d).forEach(key=>delete d[key]);
       }
     } else {
-      d.properties.fill = colorString(zipColor(zip, d.properties.STATEFP));
+      setFill(colorString(zipColor(zip, d.properties.STATEFP)), zip, "color generated from ZCTA and state");
     }
   } else if (d.properties.COUNTYNS) {
-    d.properties.fill = colorString(zipColor(d.properties.GEOID,d.properties.STATEFP));
+    setFill(colorString(zipColor(d.properties.GEOID,d.properties.STATEFP)), d.properties.GEOID, "color generated from county GEOID and state");
   } else if (d.properties.CD115FP) {
-    d.properties.fill = colorString(zipColor(d.properties.GEOID,d.properties.STATEFP));
+    setFill(colorString(zipColor(d.properties.GEOID,d.properties.STATEFP)), d.properties.GEOID, "color generated from congressional district GEOID and state");
   } else if (d.properties.STATEFP) {
-    d.properties.fill = colorString(stateColor(d.properties.STATEFP));
+    setFill(colorString(stateColor(d.properties.STATEFP)), d.properties.STATEFP, "color generated from state FIPS code");
   }
 
   if (debug) {
     Object.keys(d.properties).forEach(function(key) {
-      if (['ZCTA5CE10', 'STATEFP', 'fill', 'fillOpacity', 'MULTI_STATE_INDEX'].indexOf(key) < 0) {
+      if (['ZCTA5CE10', 'STATEFP', 'fill', 'fillOpacity', 'fill_trace', 'MULTI_STATE_INDEX'].indexOf(key) < 0) {
         delete d.properties[key];
       }
     });

@@ -123,6 +123,15 @@ function(d, opts){
     9: ["#2ca02c", 1] //dark green
   }
 
+  function setFill(color, value, explanation, opacity) {
+    d.properties.fill = color;
+    if (opacity !== undefined) d.properties.fillOpacity = opacity;
+    d.properties.fill_trace = {
+      value_used: value,
+      value_explanation: explanation
+    };
+  }
+
   if (d.properties.oars_props && d.properties.oars_props.address ) {
     d.properties.title = d.properties.oars_props.address;
   }
@@ -130,22 +139,20 @@ function(d, opts){
   let includeSecondary = (opts && 'includeSecondary' in opts) ? opts.includeSecondary : true;
   if (!d.properties.oars_props || !d.properties.oars_props.use) {
     if (includeSecondary) {
-      d.properties.fill = "#f1f1f1";
-      d.properties.fillOpacity =  0.8;
+      setFill("#f1f1f1", null, "default color because no OARS property use is available", 0.8);
     } else {
       Object.keys(d).forEach(function(key) { delete d[key]; });
     }
   } else {
     d.properties.title += " (" + d.properties.oars_props.use + ")";
     if (d.properties.oars_props.address && d.properties.oars_props.address in SPECIAL_ADDRESSES) {
-      d.properties.fill = SPECIAL_ADDRESSES[d.properties.oars_props.address];
+      setFill(SPECIAL_ADDRESSES[d.properties.oars_props.address], d.properties.oars_props.address, "special color for OARS property address");
     } else if (d.properties.oars_props.use in SPECIAL_COLORS) {
-      d.properties.fill = SPECIAL_COLORS[d.properties.oars_props.use];
+      setFill(SPECIAL_COLORS[d.properties.oars_props.use], d.properties.oars_props.use, "special color for OARS property use");
     } else {
       let category = d.properties.oars_props.use.replace(/(^\s+)/g,'').substr(0,1);
       if (includeSecondary || CATEGORY_COLORS[category][1] == 1) {
-        d.properties.fill =  CATEGORY_COLORS[category][0];
-        d.properties.fillOpacity =  CATEGORY_COLORS[category][1];
+        setFill(CATEGORY_COLORS[category][0], d.properties.oars_props.use, "category color derived from OARS property use", CATEGORY_COLORS[category][1]);
       } else {
         Object.keys(d).forEach(function(key) { delete d[key]; });
       }

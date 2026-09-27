@@ -22,6 +22,10 @@ function(d, f, debug) {
     Object.keys(d).forEach(function(key) { if (['i', 't', 'val', 'color'].indexOf(key) < 0) delete d[key]; });
   } else {
     d.properties.fill = color;
+    d.properties.fill_trace = {
+      value_used: val,
+      value_explanation: "bitmap color generated from the mapper value"
+    };
   }
 
 }
