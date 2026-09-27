@@ -22,7 +22,7 @@ HTML_TEMPLATE = """<!doctype html>
 <style>
   * {{ box-sizing: border-box; }}
   body {{ margin: 0; background: #f8fafc; color: #0f172a; font-family: system-ui, sans-serif; }}
-  #map {{ display: block; width: 100vw; height: 100vh; border: 0; touch-action: none; }}
+  #map {{ display: block; width: 100vw; height: 100vh; border: 0; }}
   #tip {{ position: fixed; z-index: 2; display: none; max-width: 22rem; padding: .45rem .65rem;
           border-radius: .3rem; background: rgba(15,23,42,.95); color: white; font-size: 14px;
           line-height: 1.35; pointer-events: none; box-shadow: 0 2px 10px rgba(0,0,0,.25); }}
@@ -30,6 +30,7 @@ HTML_TEMPLATE = """<!doctype html>
 </style>
 <object id="map" data="{svg_url}" type="image/svg+xml" aria-label="Property choropleth map"></object>
 <div id="tip" role="status"></div>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <script>
 const records = new Map({records});
 const map = document.getElementById('map');
@@ -46,57 +47,17 @@ function clearTip() {{ tip.style.display = 'none'; }}
 map.addEventListener('load', () => {{
   const svg = map.contentDocument;
   if (!svg) return;
-  const root = svg.documentElement;
-  const initialBox = root.viewBox.baseVal;
-  const original = {{ x: initialBox.x, y: initialBox.y, width: initialBox.width, height: initialBox.height }};
-  let current = {{ ...original }};
-  let target = {{ ...original }};
-  let animationFrame;
-
-  function applyViewBox(box) {{
-    root.setAttribute('viewBox', [box.x, box.y, box.width, box.height].join(' '));
-  }}
-  function animateZoom() {{
-    const easing = .28;
-    current = {{
-      x: current.x + (target.x - current.x) * easing,
-      y: current.y + (target.y - current.y) * easing,
-      width: current.width + (target.width - current.width) * easing,
-      height: current.height + (target.height - current.height) * easing,
-    }};
-    applyViewBox(current);
-    const remaining = Math.abs(target.x - current.x) + Math.abs(target.y - current.y) +
-      Math.abs(target.width - current.width) + Math.abs(target.height - current.height);
-    if (remaining > .01) animationFrame = requestAnimationFrame(animateZoom);
-    else {{ current = {{ ...target }}; applyViewBox(current); animationFrame = undefined; }}
-  }}
-  function scheduleZoom() {{ if (!animationFrame) animationFrame = requestAnimationFrame(animateZoom); }}
-  function pointInSvg(event) {{
-    const point = root.createSVGPoint();
-    point.x = event.clientX;
-    point.y = event.clientY;
-    return point.matrixTransform(root.getScreenCTM().inverse());
-  }}
-  svg.addEventListener('wheel', (event) => {{
-    event.preventDefault();
-    const point = pointInSvg(event);
-    const factor = Math.exp(event.deltaY * .0015);
-    const minimumWidth = original.width / 64;
-    const maximumWidth = original.width;
-    const width = Math.max(minimumWidth, Math.min(maximumWidth, target.width * factor));
-    const scale = width / target.width;
-    target = {{
-      x: point.x - (point.x - target.x) * scale,
-      y: point.y - (point.y - target.y) * scale,
-      width,
-      height: target.height * scale,
-    }};
-    scheduleZoom();
-  }}, {{ passive: false }});
-  svg.addEventListener('dblclick', (event) => {{
-    event.preventDefault();
-    target = {{ ...original }};
-    scheduleZoom();
+  svgPanZoom(map, {{
+    panEnabled: true,
+    zoomEnabled: true,
+    mouseWheelZoomEnabled: true,
+    dblClickZoomEnabled: true,
+    preventMouseEventsDefault: true,
+    zoomScaleSensitivity: 0.2,
+    minZoom: 1,
+    maxZoom: 64,
+    fit: true,
+    center: true,
   }});
   // One delegated listener handles every property path, avoiding per-path
   // closures and listeners on maps with tens of thousands of parcels.

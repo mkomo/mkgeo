@@ -74,8 +74,8 @@ python3 -m http.server --directory output/buffalo-properties
 
 Open `http://localhost:8000/single-family-assessment-new-test.html`. Re-run
 `mkgeo-render` after this update so its mapper records the `fill_trace` needed
-by the viewer. Use the mouse wheel or a trackpad to smoothly zoom
-at the cursor; double-click returns to the full map.
+by the viewer. The page uses the standard `svg-pan-zoom` library for mouse-wheel
+or trackpad zooming and drag panning.
 
 After generating the matrix, print the adjacent blocks for a GEOID:
 
