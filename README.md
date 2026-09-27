@@ -61,6 +61,22 @@ Without `upto:<max>`, the purple-to-yellow scale spans the source block (zero)
 through the furthest graph distance. With it, blocks farther than the maximum
 are gray.
 
+## Interactive mkgeo-render viewer
+
+Generate a hoverable web page from an `mkgeo-render` output prefix. It uses the
+SVG for rendering and embeds only property ID, address, and generic `fill_trace`
+metadata for efficient lookups:
+
+```sh
+bin/mkgeo-viewer output/buffalo-properties/single-family-assessment-new-test
+python3 -m http.server --directory output/buffalo-properties
+```
+
+Open `http://localhost:8000/single-family-assessment-new-test.html`. Re-run
+`mkgeo-render` after this update so its mapper records the `fill_trace` needed
+by the viewer. Use the mouse wheel or a trackpad to smoothly zoom
+at the cursor; double-click returns to the full map.
+
 After generating the matrix, print the adjacent blocks for a GEOID:
 
 ```sh

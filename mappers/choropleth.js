@@ -10,7 +10,7 @@ function(d, f, colorScale, minmax, scaleType="linear", debug) {
     // valid color scales can be found here: https://github.com/d3/d3-scale-chromatic
     colorScale = f.colorScale;
     minmax = f.minmax;
-    scaleType = f.scaleType;
+    scaleType = f.scaleType;//TODO implement
     debug = f.debug;
     f = f.f;
   }
@@ -62,6 +62,13 @@ function(d, f, colorScale, minmax, scaleType="linear", debug) {
     Object.assign(d, debugObj);
   } else {
     d.properties.fill = colorScale(t);
+    // Keep the raw value with the rendered feature so static viewers can show
+    // it without needing to re-evaluate the mapper expression.
+    // d.properties.choropleth_value = val;
+    d.properties.fill_trace = {
+      value_used: val,
+      value_explanation: "choropleth generated from t value of " + t
+    }
   }
 
 }
