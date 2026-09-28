@@ -63,19 +63,25 @@ are gray.
 
 ## Interactive mkgeo-render viewer
 
-Generate a hoverable web page from an `mkgeo-render` output prefix. It uses the
-SVG for rendering and embeds only property ID, address, and generic `fill_trace`
-metadata for efficient lookups:
+Generate viewer data from an `mkgeo-render` output prefix. It contains the SVG
+filename and only property ID, address, and generic `fill_trace` metadata for
+efficient lookups:
 
 ```sh
 bin/mkgeo-viewer output/buffalo-properties/single-family-assessment-new-test
-python3 -m http.server --directory output/buffalo-properties
+python3 -m http.server
 ```
 
-Open `http://localhost:8000/single-family-assessment-new-test.html`. Re-run
-`mkgeo-render` after this update so its mapper records the `fill_trace` needed
-by the viewer. The page uses the standard `svg-pan-zoom` library for mouse-wheel
-or trackpad zooming and drag panning.
+This creates `single-family-assessment-new-test.viewer.json`. Open the reusable
+viewer, passing the output-relative render prefix:
+
+```text
+http://localhost:8000/viewer?data=buffalo-properties/single-family-assessment-new-test
+```
+
+Re-run `mkgeo-render` after this update so its mapper records the `fill_trace`
+needed by the viewer. The page uses the standard `svg-pan-zoom` library for
+mouse-wheel or trackpad zooming and drag panning.
 
 After generating the matrix, print the adjacent blocks for a GEOID:
 

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mkgeo viewer</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; overflow: hidden; overscroll-behavior: none; background: #f8fafc; color: #0f172a; font-family: system-ui, sans-serif; }
+  #map { display: none; width: 100vw; height: 100vh; border: 0; }
+  #tip { position: fixed; z-index: 2; display: none; max-width: 22rem; padding: .45rem .65rem; border-radius: .3rem; background: rgba(15,23,42,.95); color: white; font-size: 14px; line-height: 1.35; pointer-events: none; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+  #tip .value { color: #bae6fd; }
+  #message { display: grid; min-height: 100vh; place-items: center; padding: 2rem; text-align: center; }
+  #message p { max-width: 42rem; }
+  code { padding: .15em .3em; border-radius: .2em; background: #e2e8f0; }
+</style>
+<object id="map" type="image/svg+xml" aria-label="Property map"></object>
+<div id="tip" role="status"></div>
+<main id="message"><p>Pass an output-relative render prefix, for example <code>?data=buffalo-properties/my-map</code>.</p></main>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+<script>
+const map = document.getElementById('map');
+const tip = document.getElementById('tip');
+const message = document.getElementById('message');
+const dataParameter = new URLSearchParams(location.search).get('data');
+
+function escapeHtml(value) {
+  const node = document.createElement('span');
+  node.textContent = value;
+  return node.innerHTML;
+}
+function placeTip(event) {
+  const margin = 14;
+  tip.style.left = Math.min(event.clientX + margin, innerWidth - tip.offsetWidth - margin) + 'px';
+  tip.style.top = Math.min(event.clientY + margin, innerHeight - tip.offsetHeight - margin) + 'px';
+}
+function clearTip() { tip.style.display = 'none'; }
+function showError(error) {
+  message.innerHTML = '<p>Unable to load viewer data: ' + escapeHtml(error.message || error) + '</p>';
+}
+
+if (dataParameter) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(dataParameter) || dataParameter.includes('..')) {
+    showError('data must be an output-relative render prefix');
+  } else {
+    const dataUrl = new URL('../output/' + dataParameter + '.viewer.json', location.href);
+  fetch(dataUrl)
+    .then(response => {
+      if (!response.ok) throw new Error(response.status + ' ' + response.statusText);
+      return response.json();
+    })
+    .then(data => {
+      if (!data.svg || !data.records) throw new Error('data must contain svg and records fields');
+      document.title = data.title || 'mkgeo viewer';
+      const svgUrl = new URL(data.svg, dataUrl);
+      map.data = svgUrl.href;
+      map.style.display = 'block';
+      message.remove();
+      map.addEventListener('load', () => {
+        const svg = map.contentDocument;
+        if (!svg) return;
+        svgPanZoom(map, {
+          panEnabled: true,
+          zoomEnabled: true,
+          mouseWheelZoomEnabled: true,
+          dblClickZoomEnabled: true,
+          preventMouseEventsDefault: false,
+          zoomScaleSensitivity: 0.2,
+          minZoom: 1,
+          maxZoom: 64,
+          fit: true,
+          center: true,
+        });
+        svg.addEventListener('pointermove', event => {
+          const path = event.target.closest && event.target.closest('path[id]');
+          const record = path && data.records[path.id];
+          if (!record) { clearTip(); return; }
+          tip.innerHTML = '<strong>' + escapeHtml(record.address || path.id) + '</strong><br><span class="value">' + escapeHtml(record.value) + '</span>';
+          tip.style.display = 'block';
+          placeTip(event);
+        });
+        svg.addEventListener('pointerleave', clearTip);
+      }, { once: true });
+    })
+    .catch(showError);
+  }
+}
+</script>
+</html>

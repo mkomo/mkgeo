@@ -1,87 +1,15 @@
 #!/usr/bin/env python3
-"""Generate a lightweight interactive HTML viewer for an mkgeo-render prefix.
+"""Generate a lightweight viewer-data JSON file for an mkgeo-render prefix.
 
-The prefix must have matching .svg and .ndjson outputs.  The viewer references
-the SVG directly and embeds only ID/address/value metadata, so the browser does
-not need to load or parse the original (often large) NDJSON file.
+The prefix must have matching .svg and .ndjson outputs. The output contains the
+SVG filename and only ID/address/value metadata, so the reusable HTML viewer
+does not need to load or parse the original (often large) NDJSON file.
 """
 
 import argparse
-import html
 import json
-import os
 import sys
 from pathlib import Path
-
-
-HTML_TEMPLATE = """<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title>
-<style>
-  * {{ box-sizing: border-box; }}
-  body {{ margin: 0; overflow: hidden; overscroll-behavior: none; background: #f8fafc; color: #0f172a; font-family: system-ui, sans-serif; }}
-  #map {{ display: block; width: 100vw; height: 100vh; border: 0; }}
-  #tip {{ position: fixed; z-index: 2; display: none; max-width: 22rem; padding: .45rem .65rem;
-          border-radius: .3rem; background: rgba(15,23,42,.95); color: white; font-size: 14px;
-          line-height: 1.35; pointer-events: none; box-shadow: 0 2px 10px rgba(0,0,0,.25); }}
-  #tip .value {{ color: #bae6fd; }}
-</style>
-<object id="map" data="{svg_url}" type="image/svg+xml" aria-label="Property choropleth map"></object>
-<div id="tip" role="status"></div>
-<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
-<script>
-const records = new Map({records});
-const map = document.getElementById('map');
-const tip = document.getElementById('tip');
-
-function placeTip(event) {{
-  const margin = 14;
-  const width = tip.offsetWidth, height = tip.offsetHeight;
-  tip.style.left = Math.min(event.clientX + margin, innerWidth - width - margin) + 'px';
-  tip.style.top = Math.min(event.clientY + margin, innerHeight - height - margin) + 'px';
-}}
-function clearTip() {{ tip.style.display = 'none'; }}
-
-map.addEventListener('load', () => {{
-  const svg = map.contentDocument;
-  if (!svg) return;
-  svgPanZoom(map, {{
-    panEnabled: true,
-    zoomEnabled: true,
-    mouseWheelZoomEnabled: true,
-    dblClickZoomEnabled: true,
-    // svg-pan-zoom registers wheel events as passive when this is false;
-    // the full-screen, non-scrolling page means browser scrolling is moot.
-    preventMouseEventsDefault: false,
-    zoomScaleSensitivity: 0.2,
-    minZoom: 1,
-    maxZoom: 64,
-    fit: true,
-    center: true,
-  }});
-  // One delegated listener handles every property path, avoiding per-path
-  // closures and listeners on maps with tens of thousands of parcels.
-  svg.addEventListener('pointermove', (event) => {{
-    const path = event.target.closest && event.target.closest('path[id]');
-    const record = path && records.get(path.id);
-    if (!record) {{ clearTip(); return; }}
-    tip.innerHTML = '<strong>' + escapeHtml(record.address || path.id) + '</strong><br>' +
-      '<span class="value">' + escapeHtml(record.value) + '</span>';
-    tip.style.display = 'block';
-    placeTip(event);
-  }});
-  svg.addEventListener('pointerleave', clearTip);
-}});
-function escapeHtml(value) {{
-  const node = document.createElement('span');
-  node.textContent = value;
-  return node.innerHTML;
-}}
-</script>
-</html>
-"""
 
 
 def fill_trace_text(fill_trace):
@@ -94,7 +22,7 @@ def fill_trace_text(fill_trace):
         if value is None:
             return json.dumps(fill_trace, sort_keys=True)
         text = value_text(value)
-        return f"{text} — {explanation}" if explanation else text
+        return f"{text} ({explanation})" if explanation else text
     return value_text(fill_trace)
 
 
@@ -112,12 +40,12 @@ def artifact_path(prefix, extension):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("prefix", type=Path, help="mkgeo-render output prefix, without .svg or .ndjson")
-    parser.add_argument("--output", type=Path, help="HTML output path (defaults to <prefix>.html)")
+    parser.add_argument("--output", type=Path, help="Viewer-data JSON output path (defaults to <prefix>.viewer.json)")
     args = parser.parse_args()
 
     ndjson_path = artifact_path(args.prefix, ".ndjson")
     svg_path = artifact_path(args.prefix, ".svg")
-    output_path = args.output or artifact_path(args.prefix, ".html")
+    output_path = args.output or artifact_path(args.prefix, ".viewer.json")
     for path in (ndjson_path, svg_path):
         if not path.is_file():
             parser.error(f"file not found: {path}")
@@ -141,13 +69,13 @@ def main():
         parser.error(f"no feature IDs found in {ndjson_path}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    svg_url = Path(os.path.relpath(svg_path, output_path.parent)).as_posix()
-    page = HTML_TEMPLATE.format(
-        title=html.escape(f"mkgeo viewer: {args.prefix.name}"),
-        svg_url=html.escape(svg_url, quote=True),
-        records=json.dumps(list(records.items()), separators=(",", ":")),
-    )
-    output_path.write_text(page, encoding="utf-8")
+    viewer_data = {
+        "version": 1,
+        "title": f"mkgeo viewer: {args.prefix.name}",
+        "svg": svg_path.name,
+        "records": records,
+    }
+    output_path.write_text(json.dumps(viewer_data, separators=(",", ":")) + "\n", encoding="utf-8")
     value_count = sum(not record["value"].startswith("Value unavailable") for record in records.values())
     print(f"Wrote {output_path} with {len(records):,} property hover records ({value_count:,} with fill traces)")
     if value_count == 0:
