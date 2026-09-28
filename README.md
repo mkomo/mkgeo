@@ -64,8 +64,8 @@ are gray.
 ## Interactive mkgeo-render viewer
 
 Generate viewer data from an `mkgeo-render` output prefix. It contains the SVG
-filename and only property ID, address, and generic `fill_trace` metadata for
-efficient lookups:
+filename and only property ID plus generic `fill_trace` metadata for efficient
+lookups. Mapper `fill_trace` objects provide the hover title and value.
 
 ```sh
 bin/mkgeo-viewer output/buffalo-properties/single-family-assessment-new-test
@@ -83,7 +83,9 @@ Re-run `mkgeo-render` after this update so its mapper records the `fill_trace`
 needed by the viewer. The page uses the standard `svg-pan-zoom` library for
 mouse-wheel or trackpad zooming and drag panning. `mkgeo-viewer` maintains
 `output/viewer-maps.json`, which populates the page's map dropdown with every
-generated viewer-data map under `output/`.
+generated viewer-data map under `output/`. The viewer also saves its zoom and
+pan coordinates in the URL, so refreshing or sharing the link restores the
+same view.
 
 After generating the matrix, print the adjacent blocks for a GEOID:
 

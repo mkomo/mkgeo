@@ -8,28 +8,7 @@ does not need to load or parse the original (often large) NDJSON file.
 
 import argparse
 import json
-import sys
 from pathlib import Path
-
-
-def fill_trace_text(fill_trace):
-    """Format the mapper-agnostic trace stored beside a feature's fill."""
-    if fill_trace is None:
-        return "Value unavailable (re-render after adding properties.fill_trace)"
-    if isinstance(fill_trace, dict):
-        value = fill_trace.get("value_used")
-        explanation = fill_trace.get("value_explanation")
-        if value is None:
-            return json.dumps(fill_trace, sort_keys=True)
-        text = value_text(value)
-        return f"{text} ({explanation})" if explanation else text
-    return value_text(fill_trace)
-
-
-def value_text(value):
-    if isinstance(value, (int, float)):
-        return format(value, ",.2f")
-    return str(value)
 
 
 def artifact_path(prefix, extension):
@@ -78,14 +57,11 @@ def main():
                 parser.error(f"invalid NDJSON at {ndjson_path}:{line_number}: {error.msg}")
             feature_id = str(feature.get("id", ""))
             properties = feature.get("properties") or {}
-            oars = properties.get("oars_props") or {}
-            if feature_id:
-                records[feature_id] = {
-                    "address": oars.get("address") or properties.get("address") or properties.get("desc1") or feature_id,
-                    "value": fill_trace_text(properties.get("fill_trace")),
-                }
+            fill_trace = properties.get("fill_trace")
+            if feature_id and fill_trace is not None:
+                records[feature_id] = fill_trace
     if not records:
-        parser.error(f"no feature IDs found in {ndjson_path}")
+        parser.error(f"no features with properties.fill_trace found in {ndjson_path}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     viewer_data = {
@@ -95,15 +71,10 @@ def main():
         "records": records,
     }
     output_path.write_text(json.dumps(viewer_data, separators=(",", ":")) + "\n", encoding="utf-8")
-    value_count = sum(not record["value"].startswith("Value unavailable") for record in records.values())
-    print(f"Wrote {output_path} with {len(records):,} property hover records ({value_count:,} with fill traces)")
+    print(f"Wrote {output_path} with {len(records):,} property hover records")
     root = output_root(output_path)
     if root:
         manifest_path, map_count = update_map_manifest(root)
         print(f"Updated {manifest_path} with {map_count:,} available maps")
-    if value_count == 0:
-        print("note: this NDJSON has no properties.fill_trace metadata; rerun mkgeo-render to include values", file=sys.stderr)
-
-
 if __name__ == "__main__":
     main()

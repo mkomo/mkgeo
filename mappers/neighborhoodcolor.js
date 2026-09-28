@@ -43,12 +43,13 @@ function(d) {
   };
 
   const properties = d.properties || {};
-  const tax2025 = d.tax_2025 || {};
-  const neighborhood = tax2025.Neighborhood;
+  const tax = properties.taxes_2026 || {};
+  const neighborhood = tax.Neighborhood;
   properties.fill = NEIGHBORHOOD_COLORS[String(neighborhood)] || "#9ca3af";
   properties.fill_trace = {
+    title: tax.Address,
     value_used: neighborhood == null ? null : String(neighborhood),
-    value_explanation: "color generated from tax_2025.Neighborhood"
+    value_explanation: "color generated from tax Neighborhood"
   };
   d.properties = properties;
 }
