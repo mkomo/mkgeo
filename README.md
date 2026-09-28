@@ -81,7 +81,9 @@ http://localhost:8000/viewer?data=buffalo-properties/single-family-assessment-ne
 
 Re-run `mkgeo-render` after this update so its mapper records the `fill_trace`
 needed by the viewer. The page uses the standard `svg-pan-zoom` library for
-mouse-wheel or trackpad zooming and drag panning.
+mouse-wheel or trackpad zooming and drag panning. `mkgeo-viewer` maintains
+`output/viewer-maps.json`, which populates the page's map dropdown with every
+generated viewer-data map under `output/`.
 
 After generating the matrix, print the adjacent blocks for a GEOID:
 

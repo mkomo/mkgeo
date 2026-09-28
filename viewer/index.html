@@ -7,6 +7,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; overflow: hidden; overscroll-behavior: none; background: #f8fafc; color: #0f172a; font-family: system-ui, sans-serif; }
   #map { display: none; width: 100vw; height: 100vh; border: 0; }
+  #maps { position: fixed; z-index: 3; top: 12px; left: 12px; max-width: min(28rem, calc(100vw - 24px)); padding: .45rem .6rem; border: 1px solid #94a3b8; border-radius: .35rem; background: rgba(255,255,255,.94); color: #0f172a; font: 14px system-ui, sans-serif; box-shadow: 0 1px 6px rgba(0,0,0,.18); }
   #tip { position: fixed; z-index: 2; display: none; max-width: 22rem; padding: .45rem .65rem; border-radius: .3rem; background: rgba(15,23,42,.95); color: white; font-size: 14px; line-height: 1.35; pointer-events: none; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
   #tip .value { color: #bae6fd; }
   #message { display: grid; min-height: 100vh; place-items: center; padding: 2rem; text-align: center; }
@@ -14,11 +15,13 @@
   code { padding: .15em .3em; border-radius: .2em; background: #e2e8f0; }
 </style>
 <object id="map" type="image/svg+xml" aria-label="Property map"></object>
+<select id="maps" aria-label="Choose a map"><option>Loading available maps…</option></select>
 <div id="tip" role="status"></div>
 <main id="message"><p>Pass an output-relative render prefix, for example <code>?data=buffalo-properties/my-map</code>.</p></main>
 <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <script>
 const map = document.getElementById('map');
+const maps = document.getElementById('maps');
 const tip = document.getElementById('tip');
 const message = document.getElementById('message');
 const dataParameter = new URLSearchParams(location.search).get('data');
@@ -37,6 +40,29 @@ function clearTip() { tip.style.display = 'none'; }
 function showError(error) {
   message.innerHTML = '<p>Unable to load viewer data: ' + escapeHtml(error.message || error) + '</p>';
 }
+function loadMapSelector() {
+  fetch('../output/viewer-maps.json')
+    .then(response => {
+      if (!response.ok) throw new Error('map list is unavailable');
+      return response.json();
+    })
+    .then(manifest => {
+      maps.replaceChildren();
+      for (const entry of manifest.maps || []) {
+        const option = new Option(entry.label, entry.id, false, entry.id === dataParameter);
+        maps.add(option);
+      }
+      if (!maps.options.length) maps.add(new Option('No generated maps available', ''));
+    })
+    .catch(error => {
+      maps.replaceChildren(new Option('Map list unavailable', ''));
+      console.warn(error);
+    });
+}
+maps.addEventListener('change', () => {
+  if (maps.value) location.search = '?data=' + encodeURIComponent(maps.value);
+});
+loadMapSelector();
 
 if (dataParameter) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(dataParameter) || dataParameter.includes('..')) {
