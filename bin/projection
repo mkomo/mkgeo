@@ -16,11 +16,20 @@ INFILE=$1
 OUTFILE=$(echo $INFILE | sed "s/.geojson$/.projection.geojson/")
 SVGFILE=$(echo $INFILE | sed "s/.geojson$/.svg/")
 PNGFILE=$(echo $INFILE | sed "s/.geojson$/.png/")
+TRANSFORMFILE=$(echo $INFILE | sed "s/.geojson$/.transform.json/")
 SIZE=8000
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 echo "creating projection of size $SIZE in $OUTFILE"
 #
 geoproject "d3.$PROJECTION().fitSize([$SIZE, $SIZE], d)" < $INFILE > $OUTFILE
+
+if [ "$PROJECTION" = "geoMercator" ]; then
+  "$SCRIPT_DIR/geo-mercator-transform" "$INFILE" "$OUTFILE" > "$TRANSFORMFILE"
+  echo "wrote Mercator transform metadata to $TRANSFORMFILE"
+else
+  echo "no transform metadata written: geo-mercator-transform supports geoMercator only" 1>&2
+fi
 
 echo "rendering svg file from $OUTFILE to $SVGFILE"
 geo2svg -w $SIZE -h $SIZE < $OUTFILE > $SVGFILE

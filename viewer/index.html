@@ -6,10 +6,12 @@
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; overflow: hidden; overscroll-behavior: none; background: #f8fafc; color: #0f172a; font-family: system-ui, sans-serif; }
-  #map { display: none; visibility: hidden; width: 100vw; height: 100vh; border: 0; }
-  #map.ready { visibility: visible; }
-  #maps { position: fixed; z-index: 3; top: 12px; left: 12px; max-width: min(28rem, calc(100vw - 24px)); padding: .45rem .6rem; border: 1px solid #94a3b8; border-radius: .35rem; background: rgba(255,255,255,.94); color: #0f172a; font: 14px system-ui, sans-serif; box-shadow: 0 1px 6px rgba(0,0,0,.18); }
-  #tip { position: fixed; z-index: 2; display: none; max-width: 22rem; max-height: calc(100vh - 24px); overflow: hidden; padding: .45rem .65rem; border-radius: .3rem; background: rgba(15,23,42,.95); color: white; font-size: 14px; line-height: 1.35; pointer-events: none; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+  #map, #leaflet-map { display: none; visibility: hidden; width: 100vw; height: 100vh; border: 0; }
+  #map.ready, #leaflet-map.ready { visibility: visible; }
+  /* Leaflet panes occupy z-index levels through 700; controls and tooltips
+     must sit above them rather than below the tile/SVG layers. */
+  #maps { position: fixed; z-index: 1000; top: 12px; left: 12px; max-width: min(28rem, calc(100vw - 24px)); padding: .45rem .6rem; border: 1px solid #94a3b8; border-radius: .35rem; background: rgba(255,255,255,.94); color: #0f172a; font: 14px system-ui, sans-serif; box-shadow: 0 1px 6px rgba(0,0,0,.18); }
+  #tip { position: fixed; z-index: 1001; display: none; max-width: 22rem; max-height: calc(100vh - 24px); overflow: hidden; padding: .45rem .65rem; border-radius: .3rem; background: rgba(15,23,42,.95); color: white; font-size: 14px; line-height: 1.35; pointer-events: none; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
   #tip .value { color: #bae6fd; }
   #tip table { width: 100%; margin-top: .4rem; border-collapse: collapse; font-size: 12px; }
   #tip th, #tip td { padding: .12rem .2rem; border-top: 1px solid rgba(255,255,255,.18); vertical-align: top; }
@@ -20,12 +22,16 @@
   code { padding: .15em .3em; border-radius: .2em; background: #e2e8f0; }
 </style>
 <object id="map" type="image/svg+xml" aria-label="Property map"></object>
+<div id="leaflet-map" aria-label="Property map with OpenStreetMap base layer"></div>
 <select id="maps" aria-label="Choose a map"><option>Loading available maps…</option></select>
 <div id="tip" role="status"></div>
 <main id="message"><p>Pass an output-relative render prefix, for example <code>?data=buffalo-properties/my-map</code>.</p></main>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const map = document.getElementById('map');
+const leafletElement = document.getElementById('leaflet-map');
 const maps = document.getElementById('maps');
 const tip = document.getElementById('tip');
 const message = document.getElementById('message');
@@ -34,6 +40,9 @@ const dataParameter = urlParameters.get('data');
 const initialZoom = Number(urlParameters.get('zoom'));
 const initialPanX = Number(urlParameters.get('panX'));
 const initialPanY = Number(urlParameters.get('panY'));
+const initialLeafletZoom = Number(urlParameters.get('leafletZoom'));
+const initialLatitude = Number(urlParameters.get('lat'));
+const initialLongitude = Number(urlParameters.get('lng'));
 let mapStateTimer;
 let activeFeatureId;
 
@@ -73,6 +82,22 @@ function updateMapUrl(panZoom) {
     history.replaceState(null, '', url);
   }, 120);
 }
+function updateLeafletUrl(leafletMap) {
+  clearTimeout(mapStateTimer);
+  mapStateTimer = setTimeout(() => {
+    const url = new URL(location.href);
+    // Leaflet permits panning through repeated copies of the world. Persist a
+    // conventional longitude so a refreshed URL stays near the SVG overlay.
+    const center = leafletMap.wrapLatLng(leafletMap.getCenter());
+    url.searchParams.set('leafletZoom', leafletMap.getZoom().toFixed(3));
+    url.searchParams.set('lat', center.lat.toFixed(6));
+    url.searchParams.set('lng', center.lng.toFixed(6));
+    url.searchParams.delete('zoom');
+    url.searchParams.delete('panX');
+    url.searchParams.delete('panY');
+    history.replaceState(null, '', url);
+  }, 120);
+}
 function loadMapSelector() {
   fetch('../output/viewer-maps.json')
     .then(response => {
@@ -99,10 +124,93 @@ maps.addEventListener('change', () => {
     url.searchParams.delete('zoom');
     url.searchParams.delete('panX');
     url.searchParams.delete('panY');
+    url.searchParams.delete('leafletZoom');
+    url.searchParams.delete('lat');
+    url.searchParams.delete('lng');
     location.assign(url);
   }
 });
 loadMapSelector();
+
+function attachTooltip(svg, data) {
+  svg.addEventListener('pointermove', event => {
+    const path = event.target.closest && event.target.closest('path[id]');
+    const fillTrace = path && data.records[path.id];
+    if (!fillTrace || typeof fillTrace !== 'object') { clearTip(); return; }
+    if (activeFeatureId !== path.id) {
+      const value = formatValue(fillTrace.value_used);
+      const explanation = fillTrace.value_explanation ? ' (' + fillTrace.value_explanation + ')' : '';
+      tip.innerHTML = '<strong>' + escapeHtml(fillTrace.title || path.id) + '</strong><br><span class="value">' + escapeHtml(value + explanation) + '</span>' + displayPropertiesTable(fillTrace.display_properties);
+      activeFeatureId = path.id;
+    }
+    tip.style.display = 'block';
+    placeTip(event);
+  });
+  svg.addEventListener('pointerleave', clearTip);
+}
+
+function transformBounds(transform, svg) {
+  const viewBox = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+  const xTransform = transform && transform.forward && transform.forward.x;
+  const yTransform = transform && transform.forward && transform.forward.y;
+  if (viewBox.length !== 4 || !viewBox.every(finite) || !xTransform || !yTransform) throw new Error('transform or SVG viewBox is invalid');
+  const xScale = Number(xTransform.scale);
+  const xTranslate = Number(xTransform.translate);
+  const yScale = Number(yTransform.scale);
+  const yTranslate = Number(yTransform.translate);
+  if (![xScale, xTranslate, yScale, yTranslate].every(finite) || xScale === 0 || yScale === 0) throw new Error('transform scale is invalid');
+  const longitude = screenX => (screenX - xTranslate) / xScale * 180 / Math.PI;
+  const latitude = screenY => (2 * Math.atan(Math.exp(-(screenY - yTranslate) / yScale)) - Math.PI / 2) * 180 / Math.PI;
+  const [x, y, width, height] = viewBox;
+  const west = longitude(x);
+  const east = longitude(x + width);
+  const north = latitude(y);
+  const south = latitude(y + height);
+  if (![west, east, north, south].every(finite)) throw new Error('transform produced non-finite geographic bounds');
+  return L.latLngBounds([Math.min(south, north), Math.min(west, east)], [Math.max(south, north), Math.max(west, east)]);
+}
+
+function renderLeafletMap(data, svgUrl) {
+  return fetch(svgUrl)
+    .then(response => {
+      if (!response.ok) throw new Error(response.status + ' ' + response.statusText);
+      return response.text();
+    })
+    .then(source => {
+      const svg = document.importNode(new DOMParser().parseFromString(source, 'image/svg+xml').documentElement, true);
+      const bounds = data.transform ? transformBounds(data.transform, svg) : L.latLngBounds(data.geographic_bounds);
+      // SVGOverlay is an image layer by default. Explicit path hit-testing
+      // keeps Leaflet's pane styles from passing pointer events through to the
+      // tile layer beneath it.
+      svg.style.pointerEvents = 'auto';
+      svg.querySelectorAll('path[id]').forEach(path => { path.style.pointerEvents = 'all'; });
+      // Leaflet must measure a visible-layout container before fitBounds. Keep
+      // it visually hidden until the SVG overlay and initial view are ready.
+      leafletElement.style.display = 'block';
+      const leafletMap = L.map(leafletElement, { zoomSnap: 0.1, zoomDelta: 0.25 });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(leafletMap);
+      L.svgOverlay(svg, bounds, { interactive: true, opacity: 0.82 }).addTo(leafletMap);
+      if (finite(initialLeafletZoom) && finite(initialLatitude) && finite(initialLongitude)) {
+        const restoredCenter = leafletMap.wrapLatLng([initialLatitude, initialLongitude]);
+        if (bounds.contains(restoredCenter)) {
+          leafletMap.setView(restoredCenter, initialLeafletZoom);
+        } else {
+          leafletMap.fitBounds(bounds);
+        }
+      } else {
+        leafletMap.fitBounds(bounds);
+      }
+      leafletMap.invalidateSize({ pan: false });
+      leafletMap.on('moveend zoomend', () => updateLeafletUrl(leafletMap));
+      attachTooltip(svg, data);
+      message.remove();
+      requestAnimationFrame(() => requestAnimationFrame(() => leafletElement.classList.add('ready')));
+      updateLeafletUrl(leafletMap);
+    });
+}
 
 if (dataParameter) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(dataParameter) || dataParameter.includes('..')) {
@@ -118,6 +226,9 @@ if (dataParameter) {
       if (!data.svg || !data.records) throw new Error('data must contain svg and records fields');
       document.title = data.title || 'mkgeo viewer';
       const svgUrl = new URL(data.svg, dataUrl);
+      if (data.transform || Array.isArray(data.geographic_bounds)) {
+        return renderLeafletMap(data, svgUrl);
+      }
       map.data = svgUrl.href;
       map.style.display = 'block';
       message.remove();
@@ -145,20 +256,7 @@ if (dataParameter) {
         // Do not reveal the object until svg-pan-zoom has applied any
         // URL-restored transform; two frames lets the SVG repaint off-screen.
         requestAnimationFrame(() => requestAnimationFrame(() => map.classList.add('ready')));
-        svg.addEventListener('pointermove', event => {
-          const path = event.target.closest && event.target.closest('path[id]');
-          const fillTrace = path && data.records[path.id];
-          if (!fillTrace || typeof fillTrace !== 'object') { clearTip(); return; }
-          if (activeFeatureId !== path.id) {
-            const value = formatValue(fillTrace.value_used);
-            const explanation = fillTrace.value_explanation ? ' (' + fillTrace.value_explanation + ')' : '';
-            tip.innerHTML = '<strong>' + escapeHtml(fillTrace.title || path.id) + '</strong><br><span class="value">' + escapeHtml(value + explanation) + '</span>' + displayPropertiesTable(fillTrace.display_properties);
-            activeFeatureId = path.id;
-          }
-          tip.style.display = 'block';
-          placeTip(event);
-        });
-        svg.addEventListener('pointerleave', clearTip);
+        attachTooltip(svg, data);
       }, { once: true });
     })
     .catch(showError);

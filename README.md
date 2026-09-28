@@ -1,6 +1,22 @@
 # mkgeo
 tools for mapping, including scraping and mapping oars data.
 
+`bin/projection` writes a `.transform.json` sidecar when using its default
+`geoMercator` projection. It records the numeric longitude/latitude-to-screen
+coordinate transform used for the generated `.projection.geojson`.
+
+Pass that sidecar to `mkgeo-render` when its input geometries use the matching
+screen-coordinate projection. The generated `.viewer.json` then includes the
+transform, allowing `viewer/index.html` to place the SVG on its OpenStreetMap
+base layer:
+
+```sh
+mkgeo-render data/buffalo/2026_zoning_with_2026_taxes.ndjson \
+  -M mappers/mkgeosearch.js \
+  --transform data/buffalo/geo/Zoning_20260928.transform.json \
+  -o output/buffalo-properties/mksearch-elmwood
+```
+
 # plan for census data
 get state adjacencies
 get zip adjacencies

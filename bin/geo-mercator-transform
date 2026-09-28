@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Derive a d3.geoMercator screen-coordinate transform from paired GeoJSON."""
+
+import json
+import math
+import sys
+
+
+class Regression:
+    def __init__(self):
+        self.count = self.sum_x = self.sum_y = self.sum_xx = self.sum_xy = 0.0
+
+    def add(self, source, target):
+        self.count += 1
+        self.sum_x += source
+        self.sum_y += target
+        self.sum_xx += source * source
+        self.sum_xy += source * target
+
+    def coefficients(self):
+        variance = self.sum_xx - self.sum_x * self.sum_x / self.count
+        if self.count < 2 or abs(variance) < 1e-20:
+            raise ValueError("not enough distinct coordinates to derive a transform")
+        scale = (self.sum_xy - self.sum_x * self.sum_y / self.count) / variance
+        translate = (self.sum_y - scale * self.sum_x) / self.count
+        return scale, translate
+
+
+def points(coordinates):
+    if isinstance(coordinates, list) and len(coordinates) >= 2 and all(isinstance(value, (int, float)) for value in coordinates[:2]):
+        yield coordinates[0], coordinates[1]
+    elif isinstance(coordinates, list):
+        for value in coordinates:
+            yield from points(value)
+
+
+def main():
+    if len(sys.argv) != 3:
+        raise SystemExit(f"usage: {sys.argv[0]} <wgs84.geojson> <mercator.projection.geojson>")
+    with open(sys.argv[1], encoding="utf-8") as source:
+        original = json.load(source)
+    with open(sys.argv[2], encoding="utf-8") as source:
+        projected = json.load(source)
+
+    original_features = original.get("features", [])
+    projected_features = projected.get("features", [])
+    if len(original_features) != len(projected_features):
+        raise ValueError("source and projected feature counts differ")
+
+    x_regression = Regression()
+    y_regression = Regression()
+    for original_feature, projected_feature in zip(original_features, projected_features):
+        geographic_points = list(points((original_feature.get("geometry") or {}).get("coordinates")))
+        screen_points = list(points((projected_feature.get("geometry") or {}).get("coordinates")))
+        if len(geographic_points) != len(screen_points):
+            raise ValueError("source and projected coordinate counts differ")
+        for (longitude, latitude), (x, y) in zip(geographic_points, screen_points):
+            longitude_radians = math.radians(longitude)
+            negative_mercator_y = -math.log(math.tan(math.pi / 4 + math.radians(latitude) / 2))
+            x_regression.add(longitude_radians, x)
+            y_regression.add(negative_mercator_y, y)
+
+    x_scale, x_translate = x_regression.coefficients()
+    y_scale, y_translate = y_regression.coefficients()
+    print(json.dumps({
+        "version": 1,
+        "source_crs": "EPSG:4326",
+        "projection": "d3.geoMercator",
+        "coordinate_units": "screen coordinates",
+        "coordinate_pairs": int(x_regression.count),
+        "forward": {
+            "x": {"formula": "x = scale * radians(longitude) + translate", "scale": x_scale, "translate": x_translate},
+            "y": {"formula": "y = scale * -ln(tan(pi/4 + radians(latitude)/2)) + translate", "scale": y_scale, "translate": y_translate},
+        },
+    }, indent=2))
+
+
+if __name__ == "__main__":
+    main()

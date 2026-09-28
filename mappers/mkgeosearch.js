@@ -13,7 +13,7 @@ function(d) {
   };
 
   if (normalized === "ONE FAMILY DWELLING") {
-    theme = { name: "one-family dwelling", color: "#073b7a", opacity: 1 };
+    theme = { name: "one-family dwelling", color: "#073b7a", opacity: 0.8 };
   } else if (/VACANT|LAND/.test(normalized)) {
     theme = { name: "vacant or undeveloped land", color: "#c8a951", opacity: 0.30 };
   } else if (/DWELLING|RESIDENCE|APARTMENT|HOME FOR AGED|SINGLE FAMILY/.test(normalized)) {

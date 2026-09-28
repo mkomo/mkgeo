@@ -2,8 +2,8 @@
 """Generate a lightweight viewer-data JSON file for an mkgeo-render prefix.
 
 The prefix must have matching .svg and .ndjson outputs. The output contains the
-SVG filename and only ID/address/value metadata, so the reusable HTML viewer
-does not need to load or parse the original (often large) NDJSON file.
+SVG filename and only properties.fill_trace metadata. An optional geoMercator
+transform sidecar lets the reusable viewer align the SVG to a geographic map.
 """
 
 import argparse
@@ -14,6 +14,19 @@ from pathlib import Path
 def artifact_path(prefix, extension):
     """Append a known artifact extension without changing a dotted prefix."""
     return Path(f"{prefix}{extension}")
+
+
+def load_transform(path):
+    """Load a projection sidecar and reject incomplete transform metadata."""
+    try:
+        transform = json.loads(path.read_text(encoding="utf-8"))
+        forward = transform["forward"]
+        for axis in ("x", "y"):
+            float(forward[axis]["scale"])
+            float(forward[axis]["translate"])
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid transform file {path}: {error}") from error
+    return transform
 
 
 def output_root(path):
@@ -39,6 +52,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("prefix", type=Path, help="mkgeo-render output prefix, without .svg or .ndjson")
     parser.add_argument("--output", type=Path, help="Viewer-data JSON output path (defaults to <prefix>.viewer.json)")
+    parser.add_argument("--transform", type=Path, help="geoMercator .transform.json sidecar for a Leaflet base layer")
     args = parser.parse_args()
 
     ndjson_path = artifact_path(args.prefix, ".ndjson")
@@ -70,6 +84,11 @@ def main():
         "svg": svg_path.name,
         "records": records,
     }
+    if args.transform:
+        try:
+            viewer_data["transform"] = load_transform(args.transform)
+        except ValueError as error:
+            parser.error(str(error))
     output_path.write_text(json.dumps(viewer_data, separators=(",", ":")) + "\n", encoding="utf-8")
     print(f"Wrote {output_path} with {len(records):,} property hover records")
     root = output_root(output_path)
