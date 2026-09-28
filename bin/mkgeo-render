@@ -14,7 +14,7 @@ mapOptions:    [-m '<js-code>'|-M <mapperfile.js>[,<mapperfile.js>,...]]"  1>&2
 JS_FILTER_EXPRESSION='true'
 JS_MAP_FUNCTION='function(d){}'
 JS_DATA='{}'
-SIZE=2000
+SIZE=8000
 STROKE='none'
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 

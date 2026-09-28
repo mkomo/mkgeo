@@ -21,7 +21,7 @@ HTML_TEMPLATE = """<!doctype html>
 <title>{title}</title>
 <style>
   * {{ box-sizing: border-box; }}
-  body {{ margin: 0; background: #f8fafc; color: #0f172a; font-family: system-ui, sans-serif; }}
+  body {{ margin: 0; overflow: hidden; overscroll-behavior: none; background: #f8fafc; color: #0f172a; font-family: system-ui, sans-serif; }}
   #map {{ display: block; width: 100vw; height: 100vh; border: 0; }}
   #tip {{ position: fixed; z-index: 2; display: none; max-width: 22rem; padding: .45rem .65rem;
           border-radius: .3rem; background: rgba(15,23,42,.95); color: white; font-size: 14px;
@@ -52,7 +52,9 @@ map.addEventListener('load', () => {{
     zoomEnabled: true,
     mouseWheelZoomEnabled: true,
     dblClickZoomEnabled: true,
-    preventMouseEventsDefault: true,
+    // svg-pan-zoom registers wheel events as passive when this is false;
+    // the full-screen, non-scrolling page means browser scrolling is moot.
+    preventMouseEventsDefault: false,
     zoomScaleSensitivity: 0.2,
     minZoom: 1,
     maxZoom: 64,
@@ -102,15 +104,20 @@ def value_text(value):
     return str(value)
 
 
+def artifact_path(prefix, extension):
+    """Append a known artifact extension without changing a dotted prefix."""
+    return Path(f"{prefix}{extension}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("prefix", type=Path, help="mkgeo-render output prefix, without .svg or .ndjson")
     parser.add_argument("--output", type=Path, help="HTML output path (defaults to <prefix>.html)")
     args = parser.parse_args()
 
-    ndjson_path = args.prefix.with_suffix(".ndjson")
-    svg_path = args.prefix.with_suffix(".svg")
-    output_path = args.output or args.prefix.with_suffix(".html")
+    ndjson_path = artifact_path(args.prefix, ".ndjson")
+    svg_path = artifact_path(args.prefix, ".svg")
+    output_path = args.output or artifact_path(args.prefix, ".html")
     for path in (ndjson_path, svg_path):
         if not path.is_file():
             parser.error(f"file not found: {path}")
